@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DormDash - Admin Dashboard</title>
+  <style>
+    :root{
+      --bg:#f7f7fb; --card:#fff; --muted:#6b7280; --accent:#4f46e5;
+      --badge-mail:#06b6d4; --badge-laundry:#f59e0b; --badge-gate:#10b981; --badge-tuck:#6366f1;
+      --text:#111827;
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Roboto,Segoe UI,Arial; margin:0; padding:20px; background:var(--bg); color:var(--text)}
+    .container{max-width:1200px;margin:0 auto}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    h1{margin:0;font-size:20px}
+    .subtitle{color:var(--muted);font-size:14px}
+    .controls{display:flex;gap:8px;align-items:center}
+    select,input{padding:8px;border-radius:8px;border:1px solid #e5e7eb}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    .panel{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.06)}
+    .list{display:flex;flex-direction:column;gap:10px;max-height:65vh;overflow:auto}
+    .card{padding:12px;border-radius:10px;border:1px solid #eef2ff;background:#fff;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .left{flex:1}
+    .name{font-weight:700}
+    .meta{color:var(--muted);font-size:13px;margin-top:6px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;color:#fff;font-size:12px;font-weight:700}
+    .badge.mail{background:var(--badge-mail)}
+    .badge.laundry{background:var(--badge-laundry)}
+    .badge.gate{background:var(--badge-gate)}
+    .badge.tuckshop{background:var(--badge-tuck)}
+    .service-details{font-size:13px;color:#374151;margin-top:8px;background:#fafafa;padding:8px;border-radius:8px;border:1px dashed #eef2ff}
+    .filters{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .small{font-size:12px;color:var(--muted)}
+    .hidden{display:none}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>DormDash - Admin</h1>
+        <div class="subtitle">Overview of all deliveries</div>
+      </div>
+      <div class="controls">
+        <label class="small">Filter:</label>
+        <select id="serviceFilter">
+          <option value="all">All</option>
+          <option value="mail">Mail</option>
+          <option value="laundry">Laundry</option>
+          <option value="gate">Gate Pickup</option>
+          <option value="tuckshop">Tuck Shop</option>
+          <option value="within-residence-hall">Within-Residence-Hall</option>
+        </select>
+
+        <!-- NEW: Residence Hall filter -->
+        <label class="small">RH:</label>
+        <select id="rhFilter">
+          <option value="">All RH</option>
+          <option value="1">RH1</option>
+          <option value="2">RH2</option>
+          <option value="3">RH3</option>
+          <option value="4">RH4</option>
+          <option value="5">RH5</option>
+          <option value="6">RH6</option>
+          <option value="7">RH7</option>
+        </select>
+
+        <label class="small">Courier:</label>
+        <input id="courierFilter" placeholder="Courier ID" />
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <h2 class="section-title">Deliveries</h2>
+        <div id="deliveriesList" class="list"></div>
+      </section>
+
+      <aside class="panel">
+        <h3 class="section-title">Stats</h3>
+        <div id="statsArea" class="small">
+          Loading...
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const API = (function(){
+      try {
+        const host = location.hostname;
+        if (host) return `${location.protocol}//${host}:8000`.replace('file://','http://');
+      } catch(e){}
+      return 'http://127.0.0.1:8000';
+    })();
+
+    function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function badge(svc){
+      const map = { mail:['Mail','mail'], laundry:['Laundry','laundry'], gate:['Gate','gate'], 'gate pickup':['Gate','gate'], tuckshop:['Tuck Shop','tuckshop'], 'tuck shop':['Tuck Shop','tuckshop'], 'within-residence-hall':['Within RH','gate'], 'within residence hall':['Within RH','gate'] };
+      const e = map[svc] || ['Unknown','mail'];
+      return `<span class="badge ${e[1]}">${e[0]}</span>`;
+    }
+    function serviceDetails(d){
+      const svc = (d.service_type||'').toLowerCase();
+      if(svc==='mail') return `<div class="service-details">Mail Pickup<br><strong>Mail Day:</strong> ${escapeHtml(d.mail_delivery_day||'N/A')}<br><strong>Slot:</strong> ${escapeHtml(d.mail_delivery_slot||'N/A')}</div>`;
+      if(svc==='laundry'){
+        let out = `<div class="service-details">Laundry<br><strong>Bag Code:</strong> ${escapeHtml(d.laundry_code||'N/A')}<br><strong>Type:</strong> ${escapeHtml(d.laundry_type||'N/A')}`;
+        if((d.laundry_type||'').toLowerCase() === 'drop-off'){
+          out += `<br><strong>Drop Day:</strong> ${escapeHtml(d.laundry_drop_day||'N/A')}<br><strong>Drop Time:</strong> ${escapeHtml(d.laundry_drop_time||'N/A')}`;
+        }
+        if((d.laundry_type||'').toLowerCase() === 'pickup'){
+          out += `<br><strong>Pickup Days:</strong> ${escapeHtml(d.laundry_pickup_days||'N/A')}<br><strong>Pickup Time:</strong> ${escapeHtml(d.laundry_pickup_time||'N/A')}`;
+        }
+        out += `</div>`;
+        return out;
+      }
+      if(svc==='gate' || svc==='gate pickup'){
+        let out = `<div class="service-details">Gate Pickup<br><strong>Gate:</strong> ${escapeHtml(d.gate_number||'N/A')}<br><strong>Package:</strong> ${escapeHtml(d.package_type||'N/A')}`;
+        if(d.additional_details) out += `<br><strong>Details:</strong> ${escapeHtml(d.additional_details)}`;
+        out += `</div>`;
+        return out;
+      }
+      if(svc==='tuckshop' || svc==='tuck shop') return `<div class="service-details">Tuck Shop Order<br><strong>Location:</strong> ${escapeHtml(d.tuck_shop_location||'N/A')}<br><strong>Items:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='within-residence-hall' || svc==='within residence hall') return `<div class="service-details">Within-Residence-Hall<br><strong>Food Place:</strong> ${escapeHtml(d.order_from||'N/A')}</div>`;
+      return `<div class="service-details">${escapeHtml(svc)}</div>`;
+    }
+
+    function renderDelivery(d){
+      // prefer showing Ashoka ID, fallback to name, then Unknown
+      const displayUser = d.name
+        ? `${d.name}${d.ashoka_id ? ` (${d.ashoka_id})` : ''}`
+        : (d.ashoka_id || 'Unknown');
+
+      const approveBtn = d.status === 'pending' ? `<button class="approve" data-id="${d.id}">Approve</button>` : '';
+      const assignControls = (d.status === 'approved')
+        ? `
+          <div style="margin-top:10px">
+            <input class="assign-courier" data-id="${d.id}" placeholder="Courier full name / ID" style="width:180px;padding:6px;border:1px solid #e5e7eb;border-radius:6px" />
+            <button class="assign" data-id="${d.id}" style="margin-left:6px">Assign</button>
+          </div>
+        `
+        : '';
+      return `
+        <div class="card" data-id="${d.id}">
+          <div class="left">
+            <div class="name"><strong>${escapeHtml(displayUser)}</strong> ${badge((d.service_type||'').toLowerCase())}</div>
+            <div class="meta">RH ${escapeHtml(d.residence_hall||'N/A')} · Room ${escapeHtml(d.room_number||'N/A')} · <span class="small">#${d.id} · ${escapeHtml(d.status||'pending')}</span></div>
+            <div class="meta">Phone ${escapeHtml(d.phone_number||'N/A')}</div>
+            ${serviceDetails(d)}
+          </div>
+          <div class="right small">
+            <div><strong>Courier:</strong> ${escapeHtml(d.courier||'Unassigned')}</div>
+            <div style="margin-top:8px"><strong>Transaction ID:</strong> ${d.transaction_id ? 'Last 4: ' + escapeHtml(d.transaction_id.slice(-4)) : 'N/A'}</div>
+            <div style="margin-top:8px"><strong>Payment:</strong> ${escapeHtml(d.payment_status||'pending')} · ₹${escapeHtml(d.price ?? 'N/A')}</div>
+            <div style="margin-top:8px"><strong>Created:</strong> ${escapeHtml(d.created_at||'')}</div>
+            <div style="margin-top:10px">${approveBtn}</div>
+            ${assignControls}
+          </div>
+        </div>
+      `;
+    }
+
+    // Renamed to loadAllDeliveries for clarity and to implement safe re-render
+    async function loadAllDeliveries(){
+      const listEl = document.getElementById('deliveriesList');
+
+      // Preserve courier input values before re-rendering
+      const courierInputs = {};
+      document.querySelectorAll('input.assign-courier').forEach(input => {
+        const id = input.dataset.id;
+        if (id && input.value.trim()) {
+          courierInputs[id] = input.value.trim();
+        }
+      });
+
+      listEl.innerHTML = '';
+      const loadingNode = document.createElement('div');
+      loadingNode.className = 'small';
+      loadingNode.textContent = 'Loading...';
+      listEl.appendChild(loadingNode);
+
+      try{
+        const res = await fetch(`${API}/deliveries`);
+        if(!res.ok) throw new Error('Failed to load deliveries');
+        let arr = await res.json();
+
+        // apply filters: service, courier, residence hall
+        const svcFilter = document.getElementById('serviceFilter').value;
+        const courierFilter = (document.getElementById('courierFilter').value||'').trim();
+        const rhFilter = (document.getElementById('rhFilter').value||'').trim();
+
+        let filtered = arr;
+        if(svcFilter && svcFilter !== 'all') filtered = filtered.filter(x => (x.service_type||'').toLowerCase()===svcFilter);
+        if(courierFilter) filtered = filtered.filter(x => String(x.courier||'').trim().toLowerCase() === courierFilter.toLowerCase());
+        if(rhFilter) filtered = filtered.filter(x => String(x.residence_hall||'').trim() === rhFilter);
+
+        // render
+        listEl.innerHTML = '';
+        if(!filtered.length) {
+          const empty = document.createElement('div');
+          empty.className = 'small';
+          empty.textContent = 'No deliveries';
+          listEl.appendChild(empty);
+        } else {
+          const frag = document.createDocumentFragment();
+          filtered.forEach(d => {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = renderDelivery(d);
+            frag.appendChild(wrapper.firstElementChild);
+          });
+          listEl.appendChild(frag);
+        }
+        updateStats(arr);
+
+        // Restore courier input values after re-rendering
+        Object.keys(courierInputs).forEach(id => {
+          const input = document.querySelector(`input.assign-courier[data-id="${id}"]`);
+          if (input) {
+            input.value = courierInputs[id];
+          }
+        });
+
+      }catch(e){
+        listEl.innerHTML = '<div class="small">Error loading deliveries</div>';
+        console.error(e);
+      }
+    }
+
+    // Approve handler
+    document.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('button.approve');
+      if(btn){
+        const id = btn.dataset.id;
+        btn.disabled = true;
+        btn.textContent = 'Approving...';
+        try{
+          const res = await fetch(`${API}/deliveries/${id}/approve`, { method: 'POST' });
+          if(!res.ok){
+            const body = await res.json().catch(()=>({detail:'error'}));
+            alert('Approve failed: ' + (body.detail || res.statusText));
+          } else {
+            await loadAllDeliveries();
+          }
+        } catch(err){
+          console.error(err);
+          alert('Network error while approving');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Approve';
+        }
+      }
+
+      const assignBtn = ev.target.closest('button.assign');
+      if(assignBtn){
+        const id = assignBtn.dataset.id;
+        const input = document.querySelector(`input.assign-courier[data-id="${id}"]`);
+        const courier = (input?.value || '').trim();
+        if(!courier){
+          alert('Enter courier full name / ID first');
+          return;
+        }
+        assignBtn.disabled = true;
+        assignBtn.textContent = 'Assigning...';
+        assignmentInProgress = true; // Pause polling during assignment
+        try{
+          const res = await fetch(`${API}/deliveries/${id}/assign`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ courier })
+          });
+          if(!res.ok){
+            const body = await res.json().catch(()=>({detail:'error'}));
+            alert('Assign failed: ' + (body.detail || res.statusText));
+          } else {
+            await loadAllDeliveries();
+          }
+        } catch(err){
+          console.error(err);
+          alert('Network error while assigning');
+        } finally {
+          assignBtn.disabled = false;
+          assignBtn.textContent = 'Assign';
+          assignmentInProgress = false; // Resume polling
+        }
+      }
+    });
+
+    function updateStats(all){
+      const byStatus = all.reduce((acc,d)=>{ acc[d.status]= (acc[d.status]||0)+1; return acc },{});
+      const byService = all.reduce((acc,d)=>{ const s=(d.service_type||'unknown'); acc[s]= (acc[s]||0)+1; return acc },{});
+      const el = document.getElementById('statsArea');
+      el.innerHTML = `
+        <div><strong>Total:</strong> ${all.length}</div>
+        <div><strong>Pending:</strong> ${byStatus.pending||0} &nbsp; <strong>Approved:</strong> ${byStatus.approved||0} &nbsp; <strong>Accepted:</strong> ${byStatus.accepted||0} &nbsp; <strong>Delivered:</strong> ${byStatus.delivered||0}</div>
+        <div style="margin-top:8px"><strong>By Service:</strong></div>
+        <div class="small">
+          Mail: ${byService.mail||0} · Laundry: ${byService.laundry||0} · Gate: ${byService.gate||0} · Tuck: ${byService.tuckshop||0}
+        </div>
+      `;
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadAllDeliveries);
+    document.getElementById('serviceFilter').addEventListener('change', loadAllDeliveries);
+    document.getElementById('courierFilter').addEventListener('input', () => loadAllDeliveries());
+    // wire rhFilter change
+    document.getElementById('rhFilter').addEventListener('change', loadAllDeliveries);
+
+    // initial load (run once)
+    loadAllDeliveries();
+
+    // Flag to pause polling during assignment operations
+    let assignmentInProgress = false;
+
+    // polling every 10s for updates, but skip if assignment in progress
+    setInterval(async () => {
+      if (!assignmentInProgress) {
+        try {
+          await loadAllDeliveries();
+        } catch (e) {
+          console.error("Admin refresh failed", e);
+        }
+      }
+    }, 10000);
+
+  </script>
+</body>
+</html>
+

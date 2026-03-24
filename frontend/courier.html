@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DormDash - Courier Dashboard</title>
+  <style>
+    :root{
+      --bg:#f7f7fb; --card:#fff; --muted:#6b7280; --accent:#4f46e5;
+      --badge-mail:#06b6d4; --badge-laundry:#f59e0b; --badge-gate:#10b981; --badge-tuck:#6366f1;
+      --text:#111827;
+    }
+    *{box-sizing:border-box}
+    body{font-family:system-ui,-apple-system,Roboto,Segoe UI,Arial; margin:0; padding:20px; background:var(--bg); color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:1fr 420px;gap:20px}
+    header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+    h1{margin:0;font-size:20px}
+    .subtitle{color:var(--muted);font-size:14px}
+    .panel{background:var(--card);padding:16px;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,0.06)}
+    .controls{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+    input[type="text"]{padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px}
+    button{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .list{display:flex;flex-direction:column;gap:12px;max-height:70vh;overflow:auto;padding-right:4px}
+    .card{padding:12px;border-radius:10px;border:1px solid #eef2ff;background:#fff;display:flex;gap:12px;align-items:flex-start}
+    .card-left{flex:1}
+    .name{font-weight:700;font-size:16px;margin-bottom:6px}
+    .meta{color:var(--muted);font-size:13px;margin-bottom:8px}
+    .badge{display:inline-block;padding:4px 8px;border-radius:999px;color:#fff;font-size:12px;font-weight:700}
+    .badge.mail{background:var(--badge-mail)}
+    .badge.laundry{background:var(--badge-laundry)}
+    .badge.gate{background:var(--badge-gate)}
+    .badge.tuckshop{background:var(--badge-tuck)}
+    .service-details{font-size:13px;color:#374151;margin-top:6px;background:#fafafa;padding:8px;border-radius:8px;border:1px dashed #eef2ff}
+    .actions{display:flex;flex-direction:column;gap:8px}
+    .accept{background:#059669;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer}
+    .complete{background:#2563eb;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer}
+    .small{font-size:12px;color:var(--muted)}
+    .hidden{display:none}
+    @media (max-width:980px){ .wrap{grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <!-- Login section -->
+  <div id="loginSection" style="max-width:720px;margin:16px auto;padding:16px;background:#fff;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.04)">
+    <h2 style="margin:0 0 8px">Courier Login</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="courier_id_input" type="text" placeholder="Enter your courier ID" style="flex:1;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px" />
+      <button id="startBtn">Start</button>
+    </div>
+    <div class="small" style="margin-top:8px;color:#6b7280">Your courier ID will be saved locally for this browser.</div>
+  </div>
+
+  <!-- Dashboard (hidden until login) -->
+  <div id="dashboard" style="display:none;">
+    <div class="wrap">
+      <header>
+        <div>
+          <h1>DormDash - Courier</h1>
+          <div class="subtitle">Available pickups and your assigned deliveries</div>
+        </div>
+        <div class="controls">
+          <div class="small">Logged in as: <span id="courierLabel" style="font-weight:700"></span></div>
+          <button id="logoutBtn" style="background:#ef4444">Logout</button>
+        </div>
+      </header>
+
+      <main class="panel">
+        <h2 class="section-title">Available Pickups</h2>
+        <div id="openList" class="list">
+          <!-- open deliveries rendered here -->
+        </div>
+      </main>
+
+      <aside class="panel">
+        <h2 class="section-title">My Deliveries</h2>
+        <div id="myList" class="list">
+          <!-- courier's deliveries -->
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    // UI elements & state
+    let courierId = null;
+    const loginSection = document.getElementById('loginSection');
+    const dashboard = document.getElementById('dashboard');
+    const courierInput = document.getElementById('courier_id_input');
+    const startBtn = document.getElementById('startBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const courierLabel = document.getElementById('courierLabel');
+
+    // Rendering helpers
+    function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function badgeHtml(svc){
+      const map = { Mail:['Mail','mail'], Laundry:['Laundry','laundry'], 'Gate Pickup':['Gate','gate'], 'Tuck Shop':['Tuck Shop','tuckshop'], 'Within-Residence-Hall':['Within RH','gate'] };
+      const entry = map[svc] || ['Unknown','mail'];
+      return `<span class="badge ${entry[1]}">${entry[0]}</span>`;
+    }
+
+    function serviceDetailsHtml(d){
+      const svc = (d.service_type||'');
+      if(svc==='Mail') return `<div class="service-details">Mail Pickup<br><strong>Mail Day:</strong> ${escapeHtml(d.mail_delivery_day||'N/A')}<br><strong>Slot:</strong> ${escapeHtml(d.mail_delivery_slot||'N/A')}</div>`;
+      if(svc==='Laundry'){
+        let out = `<div class="service-details">Laundry<br><strong>Bag Code:</strong> ${escapeHtml(d.laundry_code||'N/A')}<br><strong>Type:</strong> ${escapeHtml(d.laundry_type||'N/A')}`;
+        if((d.laundry_type||'').toLowerCase() === 'drop-off'){
+          out += `<br><strong>Drop Day:</strong> ${escapeHtml(d.laundry_drop_day||'N/A')}<br><strong>Drop Time:</strong> ${escapeHtml(d.laundry_drop_time||'N/A')}`;
+        }
+        if((d.laundry_type||'').toLowerCase() === 'pickup'){
+          out += `<br><strong>Pickup Days:</strong> ${escapeHtml(d.laundry_pickup_days||'N/A')}<br><strong>Pickup Time:</strong> ${escapeHtml(d.laundry_pickup_time||'N/A')}`;
+        }
+        out += `</div>`;
+        return out;
+      }
+      if(svc==='Gate Pickup'){
+        let out = `<div class="service-details">Gate Pickup<br><strong>Gate:</strong> ${escapeHtml(d.gate_number||'N/A')}<br><strong>Package:</strong> ${escapeHtml(d.package_type||'N/A')}`;
+        if(d.additional_details) out += `<br><strong>Details:</strong> ${escapeHtml(d.additional_details)}`;
+        out += `</div>`;
+        return out;
+      }
+      if(svc==='Tuck Shop') return `<div class="service-details">Tuck Shop Order<br><strong>Location:</strong> ${escapeHtml(d.tuck_shop_location||'N/A')}<br><strong>Items:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='Within-Residence-Hall') return `<div class="service-details">Within-Residence-Hall<br><strong>Food Place:</strong> ${escapeHtml(d.order_from||'N/A')}</div>`;
+      return `<div class="service-details">${escapeHtml(svc)}</div>`;
+    }
+
+    function renderOpenCard(d){
+      const displayUser = d.name ? `${d.name} (${d.ashoka_id || ''})` : (d.ashoka_id || 'Unknown');
+      const nameEsc = escapeHtml(displayUser);
+      const hall = escapeHtml(d.residence_hall || 'N/A');
+      const room = escapeHtml(d.room_number || 'N/A');
+      return `
+        <div class="card" data-id="${d.id}">
+          <div class="card-left">
+            <div class="name">${nameEsc} ${badgeHtml(d.service_type)}</div>
+            <div class="meta">RH ${hall} · Room ${room} · <span class="small">#${d.id}</span></div>
+            <div class="meta">Phone ${escapeHtml(d.phone_number || 'N/A')}</div>
+            ${serviceDetailsHtml(d)}
+          </div>
+          <div class="actions">
+            <button class="accept" data-id="${d.id}">Accept</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMyCard(d){
+      const displayUser = d.name ? `${d.name} (${d.ashoka_id || ''})` : (d.ashoka_id || 'Unknown');
+      const nameEsc = escapeHtml(displayUser);
+      const hall = escapeHtml(d.residence_hall || 'N/A');
+      const room = escapeHtml(d.room_number || 'N/A');
+      const showComplete = (d.status === 'accepted' && d.courier && String(d.courier) === String(courierId));
+      return `
+        <div class="card" data-id="${d.id}">
+          <div class="card-left">
+            <div class="name">${nameEsc} ${badgeHtml(d.service_type)}</div>
+            <div class="meta">RH ${hall} · Room ${room} · <span class="small">#${d.id} · ${escapeHtml(d.status||'')}</span></div>
+            <div class="meta">Phone ${escapeHtml(d.phone_number || 'N/A')}</div>
+            ${serviceDetailsHtml(d)}
+          </div>
+          <div class="actions">
+            ${ showComplete ? `<button class="complete" data-id="${d.id}">Mark as Delivered</button>` : '' }
+          </div>
+        </div>
+      `;
+    }
+
+    // API loads
+    async function loadOpen(){
+      const container = document.getElementById('openList');
+      container.innerHTML = ''; // clear to avoid duplicates
+      try{
+        const query = courierId ? `?courier_id=${encodeURIComponent(courierId)}` : '';
+        const res = await fetch(`${API_BASE}/deliveries/open${query}`);
+        if(!res.ok) throw new Error('Failed to load open deliveries');
+        const list = await res.json();
+        if (!Array.isArray(list) || list.length===0) {
+          container.innerHTML = '<div class="small">No open deliveries</div>';
+          return;
+        }
+        container.innerHTML = list.map(d => renderOpenCard(d)).join('');
+      } catch(e){
+        container.innerHTML = `<div class="small">Error loading open deliveries</div>`;
+        console.error(e);
+      }
+    }
+
+    async function loadMy(){
+      const container = document.getElementById('myList');
+      container.innerHTML = ''; // clear to avoid duplicates
+      if(!courierId){ container.innerHTML = '<div class="small">Courier not set</div>'; return; }
+      try{
+        const res = await fetch(`${API_BASE}/deliveries/courier/${encodeURIComponent(courierId)}`);
+        if(!res.ok) throw new Error('Failed to load my deliveries');
+        const list = await res.json();
+        if(!Array.isArray(list) || list.length===0){ container.innerHTML = '<div class="small">No assigned deliveries</div>'; return; }
+        container.innerHTML = list.map(d => renderMyCard(d)).join('');
+      } catch(e){
+        container.innerHTML = `<div class="small">Error loading my deliveries</div>`;
+        console.error(e);
+      }
+    }
+
+    async function loadDeliveries(){
+      await Promise.all([loadOpen(), loadMy()]);
+    }
+
+    // Accept and complete actions (no prompt)
+    async function acceptDelivery(id){
+      if(!courierId){
+        alert('Courier ID not set');
+        return;
+      }
+      try{
+        const res = await fetch(`${API_BASE}/deliveries/${id}/accept`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ courier: courierId })
+        });
+        if(!res.ok){
+          const body = await res.json().catch(()=>({detail:'error'}));
+          alert('Accept failed: ' + (body.detail||res.statusText));
+        } else {
+          await loadDeliveries();
+        }
+      } catch(err){
+        console.error(err);
+        alert('Network error while accepting');
+      }
+    }
+
+    async function completeDelivery(id){
+      try{
+        const res = await fetch(`${API_BASE}/deliveries/${id}/complete`, { method: 'POST' });
+        if(!res.ok){
+          const body = await res.json().catch(()=>({detail:'error'}));
+          alert('Complete failed: ' + (body.detail||res.statusText));
+        } else {
+          await loadDeliveries();
+          alert('Marked delivered');
+        }
+      } catch(err){
+        console.error(err);
+        alert('Network error while completing');
+      }
+    }
+
+    // Click delegation
+    document.addEventListener('click', (ev) => {
+      const acceptBtn = ev.target.closest('button.accept');
+      if(acceptBtn){
+        const id = acceptBtn.dataset.id;
+        acceptBtn.disabled = true;
+        acceptBtn.textContent = 'Accepting...';
+        acceptDelivery(id).finally(()=>{ acceptBtn.disabled=false; acceptBtn.textContent='Accept'; });
+        return;
+      }
+      const completeBtn = ev.target.closest('button.complete');
+      if(completeBtn){
+        const id = completeBtn.dataset.id;
+        completeBtn.disabled = true;
+        completeBtn.textContent = 'Submitting...';
+        completeDelivery(id).finally(()=>{ completeBtn.disabled=false; completeBtn.textContent='Mark as Delivered'; });
+        return;
+      }
+    });
+
+    // Login flow
+    function setLoggedIn(id){
+      courierId = id;
+      courierLabel.textContent = courierId;
+      loginSection.style.display = 'none';
+      dashboard.style.display = 'block';
+    }
+
+    startBtn.addEventListener('click', () => {
+      const val = (courierInput.value || '').trim();
+      if(!val){ alert('Enter courier ID'); return; }
+      localStorage.setItem('courier_id', val);
+      setLoggedIn(val);
+      loadDeliveries();
+    });
+
+    logoutBtn.addEventListener('click', () => {
+      localStorage.removeItem('courier_id');
+      courierId = null;
+      courierInput.value = '';
+      dashboard.style.display = 'none';
+      loginSection.style.display = 'block';
+    });
+
+    // Auto-login and auto-refresh
+    window.onload = () => {
+      const saved = localStorage.getItem('courier_id');
+      if(saved){
+        setLoggedIn(saved);
+        loadDeliveries();
+      }
+      // polling every 10s for updates
+      setInterval(async () => {
+        try {
+          if(courierId){
+            await loadDeliveries();
+          } else {
+            // still refresh open list for unauthenticated view? skip until login
+          }
+        } catch(e){
+          console.error("Courier refresh failed", e);
+        }
+      }, 10000);
+    };
+  </script>
+</body>
+</html>

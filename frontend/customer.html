@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DormDash - Request Package Pickup</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#14b8a6">
+
+  <style>
+    /* Minimal preserved styles - keep your original styles where the ... are */
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Roboto, "Segoe UI", Arial; background:#f7f7fb; margin:0; padding:24px; }
+    .container { max-width:720px; margin:0 auto; background:#fff; padding:20px; border-radius:8px; border:2px solid #14b8a6; box-shadow:0 6px 20px rgba(0,0,0,0.06); }
+    h1 { margin:0 0 8px; font-size:24px; color:#111827; }
+    .subtitle { margin:0 0 16px; color:#6b7280; }
+    .form-row { margin-bottom:12px; display:flex; gap:12px; align-items:center; }
+    label { display:block; width:140px; color:#374151; font-size:14px; }
+    input[type="text"], input[type="tel"], select, textarea {
+      flex:1; padding:10px 12px; border:1px solid #e5e7eb; border-radius:6px; font-size:14px;
+      background:#fff;
+    }
+    /* ensure select matches input styling */
+    input[type="text"],
+    input[type="number"],
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 16px;
+      background: #fff;
+      box-sizing: border-box;
+      color: #111827;
+      outline: none;
+    }
+    input[type="text"]:focus,
+    select:focus,
+    textarea:focus {
+      box-shadow: 0 0 0 4px rgba(20,184,166,0.12);
+      border-color: #0d9488;
+    }
+    textarea { min-height:80px; resize:vertical; }
+    button { background:#14b8a6; color:white; border:none; padding:10px 16px; border-radius:6px; cursor:pointer; font-weight:600; }
+    button[disabled] { opacity:0.6; cursor:not-allowed; }
+    .hint { color:#6b7280; font-size:13px; margin-top:6px; }
+    .hidden { display:none; }
+    .message { margin-top:12px; padding:10px 12px; border-radius:6px; }
+    .message.success { background:#ecfeff; color:#065f46; border:1px solid #bbf7d0; }
+    .message.error { background:#fff1f2; color:#991b1b; border:1px solid #fecaca; }
+    .status-panel {
+      margin: 12px 0 16px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+    .status-title {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+    .status-value {
+      font-weight: 700;
+      font-size: 16px;
+      color: #111827;
+    }
+    .pending-deliveries {
+      margin: 16px 0;
+      padding: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      background: #fafafa;
+    }
+    .pending-deliveries h3 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      color: #111827;
+    }
+    .delivery-item {
+      padding: 12px;
+      margin-bottom: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .delivery-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .delivery-service {
+      font-weight: 600;
+      color: #111827;
+    }
+    .delivery-status {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .delivery-status.pending { background: #fef3c7; color: #92400e; }
+    .delivery-status.approved { background: #dbeafe; color: #1e40af; }
+    .delivery-status.accepted { background: #dcfce7; color: #166534; }
+    .delivery-status.delivered { background: #d1fae5; color: #065f46; }
+    .delivery-details {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .no-deliveries {
+      text-align: center;
+      color: #6b7280;
+      font-style: italic;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>DormDash</h1>
+    <p class="subtitle">Request a service</p>
+    <div id="deliveryStatusPanel" class="status-panel">
+      <div class="status-title">Current Delivery Status</div>
+      <div id="deliveryStatusValue" class="status-value">No ongoing delivery</div>
+    </div>
+
+    <div id="pendingDeliveriesSection" class="pending-deliveries">
+      <h3>Your Deliveries</h3>
+      <div id="pendingDeliveriesList">
+        <div class="no-deliveries">No deliveries yet</div>
+      </div>
+    </div>
+
+    <div id="requestSection">
+      <!-- Replace the form section where residence_hall and service_type live with the block below -->
+      <form id="deliveryForm">
+      <!-- NEW: Name field (placed above Ashoka ID as requested) -->
+      <div class="form-row">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" placeholder="Your full name" required />
+      </div>
+
+      <div class="form-row">
+        <label for="phone_number">Phone Number</label>
+        <input id="phone_number" name="phone_number" type="tel" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" placeholder="10-digit phone number" required />
+      </div>
+
+      <div class="form-row">
+        <label for="ashoka_id">Ashoka ID</label>
+        <input id="ashoka_id" name="ashoka_id" type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" placeholder="10-digit Ashoka ID" required />
+      </div>
+
+      <div class="form-row">
+        <label for="service_type">Service</label>
+        <select id="service_type" name="service_type" required>
+          <option value="">Select service</option>
+          <option value="Mail">Mail</option>
+          <option value="Laundry">Laundry</option>
+          <option value="Gate Pickup">Gate Pickup</option>
+          <option value="Tuck Shop">Tuck Shop</option>
+          <option value="Within-Residence-Hall">Within-Residence-Hall</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="residence_hall">Residence Hall</label>
+        <select id="residence_hall" name="residence_hall" required>
+          <option value="">Select Residence Hall</option>
+          <option value="1">RH1</option>
+          <option value="2">RH2</option>
+          <option value="3">RH3</option>
+          <option value="4">RH4</option>
+          <option value="5">RH5</option>
+          <option value="6">RH6</option>
+          <option value="7">RH7</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+      <label for="room_number">Room number</label>
+      <input id="room_number" name="room_number" type="text" placeholder="e.g. 226A" required />
+      </div>
+
+      <div id="priceDisplay" style="margin-top:8px;font-weight:600">Price: ₹0</div>
+
+      <!-- Payment UPI block inserted above submit -->
+      <div style="margin-top:16px;padding:12px;border-radius:10px;border:1px dashed #e5e7eb;background:#fafafa">
+        <div style="font-weight:700;margin-bottom:6px">Payment (UPI)</div>
+
+        <div style="font-size:13px;margin-bottom:8px;color:#6b7280">
+          Step 1: Pay via UPI<br>
+          Step 2: Enter transaction ID<br>
+          Step 3: Submit request
+        </div>
+
+        <div style="margin-bottom:8px">
+          <strong>UPI ID:</strong> adhirajvohra@okhdfcbank
+        </div>
+
+        <button type="button" id="payBtn"
+          style="background:#14b8a6;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;margin-bottom:10px">
+          Pay
+        </button>
+
+        <label style="display:block;margin-top:6px">Last 4 digits of Transaction ID</label>
+        <input type="text" id="transaction_id" placeholder="Enter last 4 digits" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required />
+
+        <div style="font-size:12px;color:#6b7280;margin-top:6px">
+          Pay first, then enter the last 4 digits of your transaction ID above
+        </div>
+      </div>
+
+      <!-- Mail extra -->
+      <div id="mail_fields" class="hidden">
+        <div class="form-row">
+          <label for="mail_delivery_day">Mail Day</label>
+          <select id="mail_delivery_day" name="mail_delivery_day">
+            <option value="">Select day</option>
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+            <option value="Sunday">Sunday</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="mail_delivery_slot">Delivery Slot</label>
+          <select id="mail_delivery_slot" name="mail_delivery_slot">
+            <option value="">Select slot</option>
+            <option value="morning">Morning delivery</option>
+            <option value="evening">Evening delivery</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Laundry extra -->
+      <div id="laundry_fields" class="hidden">
+        <div class="form-row">
+          <label for="laundry_type">Laundry Type</label>
+          <select id="laundry_type" name="laundry_type">
+            <option value="">Select option</option>
+            <option value="drop-off">Drop-off</option>
+            <option value="pickup">Pickup</option>
+            <option value="dropoff+pickup">Drop-off + Pickup</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="laundry_code">Laundry Code</label>
+          <input id="laundry_code" name="laundry_code" type="text" placeholder="Bag code (required for Laundry)" />
+        </div>
+        <div id="laundry_drop_fields" class="hidden">
+          <div class="form-row">
+            <label for="laundry_drop_day">Drop Day</label>
+            <select id="laundry_drop_day" name="laundry_drop_day">
+              <option value="">Select day</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="laundry_drop_time">Drop Time</label>
+            <select id="laundry_drop_time" name="laundry_drop_time">
+              <option value="">Select time</option>
+              <option value="12:00">12:00</option>
+              <option value="6:30">6:30</option>
+            </select>
+          </div>
+        </div>
+        <div id="laundry_pickup_fields" class="hidden">
+          <div class="form-row">
+            <label for="laundry_pickup_days">Pickup Day</label>
+            <select id="laundry_pickup_days" name="laundry_pickup_days">
+              <option value="">Select day</option>
+              <option value="Monday">Monday</option>
+              <option value="Tuesday">Tuesday</option>
+              <option value="Wednesday">Wednesday</option>
+              <option value="Thursday">Thursday</option>
+              <option value="Friday">Friday</option>
+              <option value="Saturday">Saturday</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="laundry_pickup_time">Pickup Time</label>
+            <select id="laundry_pickup_time" name="laundry_pickup_time">
+              <option value="">Select time</option>
+              <option value="12:00">12:00</option>
+              <option value="6:30">6:30</option>
+            </select>
+          </div>
+        </div>
+        <div id="laundry_combined_fields" class="hidden">
+          <div class="form-row">
+            <label for="laundry_combined_drop_day">Drop-off Day</label>
+            <select id="laundry_combined_drop_day" name="laundry_drop_day">
+              <option value="">Select day</option>
+              <option value="Monday">Monday</option>
+              <option value="Thursday">Thursday</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="laundry_combined_drop_time">Drop-off Time</label>
+            <select id="laundry_combined_drop_time" name="laundry_drop_time">
+              <option value="">Select time</option>
+              <option value="12:00">12:00</option>
+              <option value="6:30">6:30</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="laundry_combined_pickup_day">Pickup Day</label>
+            <input type="text" id="laundry_combined_pickup_day" name="laundry_pickup_days" readonly />
+          </div>
+          <div class="form-row">
+            <label for="laundry_combined_pickup_time">Pickup Time</label>
+            <select id="laundry_combined_pickup_time" name="laundry_pickup_time">
+              <option value="">Select time</option>
+              <option value="12:00">12:00</option>
+              <option value="6:30">6:30</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gate pickup extras -->
+      <div id="gate_fields" class="hidden">
+        <div class="form-row">
+          <label for="gate_number">Gate #</label>
+          <select id="gate_number" name="gate_number">
+            <option value="" disabled selected>Select gate</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="package_type">Package type</label>
+          <input id="package_type" name="package_type" type="text" placeholder="Blinkit, Swiggy, Zomato, etc" />
+        </div>
+        <div class="form-row">
+          <label for="additional_details">Details</label>
+          <input id="additional_details" name="additional_details" type="text" placeholder="OTP or other details (optional)" />
+        </div>
+      </div>
+
+      <!-- Tuck shop extras -->
+      <div id="tuck_fields" class="hidden">
+        <div class="form-row">
+          <label for="tuck_shop_location">Tuck Shop</label>
+          <select id="tuck_shop_location" name="tuck_shop_location">
+            <option value="">Select tuck shop</option>
+            <option value="tuck shop mess">Tuck Shop Mess</option>
+            <option value="tuck shop rh5">Tuck Shop RH5</option>
+          </select>
+        </div>
+        <div class="form-row" style="align-items:flex-start;">
+          <label for="items_requested">Items</label>
+          <textarea id="items_requested" name="items_requested" placeholder="List items you want"></textarea>
+        </div>
+      </div>
+
+      <div id="within_rh_fields" class="hidden">
+        <div class="form-row">
+          <label for="order_from">Food Place</label>
+          <input id="order_from" name="order_from" type="text" placeholder="Where are you ordering from?" />
+        </div>
+      </div>
+
+      <div style="margin-top:12px">
+        <button type="submit" id="submitBtn" style="background:#14b8a6;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer">Submit request</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+  const API_BASE = "http://127.0.0.1:8000";
+  const TRACKED_DELIVERY_IDS_KEY = "tracked_delivery_ids";
+
+  function normalizeText(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function getTrackedDeliveryIds() {
+    try {
+      const raw = localStorage.getItem(TRACKED_DELIVERY_IDS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((x) => Number(x))
+        .filter((x) => Number.isInteger(x) && x > 0);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function addTrackedDeliveryId(id) {
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId) || numericId <= 0) return;
+    const existing = getTrackedDeliveryIds();
+    if (!existing.includes(numericId)) {
+      existing.push(numericId);
+      localStorage.setItem(TRACKED_DELIVERY_IDS_KEY, JSON.stringify(existing));
+    }
+  }
+
+  function statusLabel(status) {
+    if (status === "approved") return "Approved";
+    if (status === "accepted") return "Dasher on the way";
+    if (status === "delivered") return "Delivered";
+    if (status === "pending") return "Pending Approval";
+    return "No ongoing delivery";
+  }
+
+  function updateDeliveryStatusUI(status) {
+    const el = document.getElementById("deliveryStatusValue");
+    if (!el) return;
+    el.textContent = statusLabel(status);
+  }
+
+  function renderDeliveryItem(delivery) {
+    const statusClass = delivery.status || 'pending';
+    const statusText = statusLabel(delivery.status);
+    const serviceType = delivery.service_type || 'Unknown';
+    const residenceHall = delivery.residence_hall || 'N/A';
+    const roomNumber = delivery.room_number || 'N/A';
+    const createdAt = delivery.created_at ? new Date(delivery.created_at).toLocaleString() : 'N/A';
+
+    let details = `RH ${residenceHall} · Room ${roomNumber}<br>Created: ${createdAt}`;
+
+    // Add service-specific details
+    if (serviceType === 'Mail') {
+      details += `<br>Mail Day: ${delivery.mail_delivery_day || 'N/A'} · Slot: ${delivery.mail_delivery_slot || 'N/A'}`;
+    } else if (serviceType === 'Laundry') {
+      details += `<br>Code: ${delivery.laundry_code || 'N/A'} · Type: ${delivery.laundry_type || 'N/A'}`;
+      if (delivery.laundry_type === 'drop-off') {
+        details += `<br>Drop: ${delivery.laundry_drop_day || 'N/A'} at ${delivery.laundry_drop_time || 'N/A'}`;
+      } else if (delivery.laundry_type === 'pickup') {
+        details += `<br>Pickup: ${delivery.laundry_pickup_days || 'N/A'} at ${delivery.laundry_pickup_time || 'N/A'}`;
+      } else if (delivery.laundry_type === 'dropoff+pickup') {
+        details += `<br>Drop: ${delivery.laundry_drop_day || 'N/A'} at ${delivery.laundry_drop_time || 'N/A'}`;
+        details += `<br>Pickup: ${delivery.laundry_pickup_days || 'N/A'} at ${delivery.laundry_pickup_time || 'N/A'}`;
+      }
+    } else if (serviceType === 'Gate Pickup') {
+      details += `<br>Gate: ${delivery.gate_number || 'N/A'} · Package: ${delivery.package_type || 'N/A'}`;
+    } else if (serviceType === 'Tuck Shop') {
+      details += `<br>Location: ${delivery.tuck_shop_location || 'N/A'} · Items: ${delivery.items_requested || 'N/A'}`;
+    } else if (serviceType === 'Within-Residence-Hall') {
+      details += `<br>Food Place: ${delivery.order_from || 'N/A'}`;
+    }
+
+    return `
+      <div class="delivery-item">
+        <div class="delivery-header">
+          <span class="delivery-service">${serviceType} #${delivery.id}</span>
+          <span class="delivery-status ${statusClass}">${statusText}</span>
+        </div>
+        <div class="delivery-details">${details}</div>
+      </div>
+    `;
+  }
+
+  function updatePendingDeliveries(deliveries) {
+    const container = document.getElementById('pendingDeliveriesList');
+    if (!container) return;
+
+    if (!deliveries || deliveries.length === 0) {
+      container.innerHTML = '<div class="no-deliveries">No deliveries yet</div>';
+      return;
+    }
+
+    // Sort deliveries by creation date (newest first)
+    const sortedDeliveries = [...deliveries].sort((a, b) => {
+      const dateA = new Date(a.created_at || 0);
+      const dateB = new Date(b.created_at || 0);
+      return dateB - dateA;
+    });
+
+    container.innerHTML = sortedDeliveries.map(d => renderDeliveryItem(d)).join('');
+  }
+
+  function inputValueOrNull(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    const value = (el.value || "").trim();
+    return value.length ? value : null;
+  }
+
+  function digitsOnly(value) {
+    return String(value || "").replace(/\D/g, "");
+  }
+
+  function isWithinDeliveryWindow(date = new Date()) {
+    const hour = date.getHours();
+    // Allow requests from 10:00 to 03:59 (10 AM to 4 AM).
+    return hour >= 10 || hour < 4;
+  }
+
+  let swRegistrationPromise = null;
+
+  async function ensureServiceWorkerRegistration() {
+    if (!("serviceWorker" in navigator)) return null;
+    if (swRegistrationPromise) return swRegistrationPromise;
+
+    swRegistrationPromise = (async () => {
+      try {
+        const reg = await navigator.serviceWorker.register('service-worker.js');
+        await navigator.serviceWorker.ready;
+        return reg;
+      } catch (e) {
+        console.error("Service Worker registration failed", e);
+        return null;
+      }
+    })();
+
+    return swRegistrationPromise;
+  }
+
+  async function requestNotificationPermission() {
+    if (!("Notification" in window)) return "unsupported";
+    try {
+      if (Notification.permission === "granted") return "granted";
+      if (Notification.permission === "denied") return "denied";
+      const permission = await Notification.requestPermission();
+      console.log("Notification permission:", permission);
+      return permission;
+    } catch (e) {
+      console.warn("Notification permission request failed", e);
+      return "error";
+    }
+  }
+
+  function notifyForStatus(status, isInitial = false) {
+    if (status === "approved") {
+      showNotification(
+        "Delivery Approved ✅",
+        isInitial
+          ? "Your request is approved and waiting for courier pickup."
+          : "Your request has been approved."
+      );
+      return;
+    }
+    if (status === "accepted") {
+      showNotification(
+        "Delivery Accepted 🚚",
+        isInitial
+          ? "Your delivery is already in progress!"
+          : "Your delivery is on the way!"
+      );
+      return;
+    }
+    if (status === "delivered") {
+      showNotification(
+        "Delivered 📦",
+        isInitial
+          ? "Your package has already arrived!"
+          : "Your package has arrived!"
+      );
+    }
+  }
+
+  // REPLACED showNotification to use Service Worker notifications (no new Notification())
+  async function showNotification(title, body) {
+    console.log("SW NOTIFICATION:", title, body);
+
+    if (!("serviceWorker" in navigator)) {
+      console.warn("Service Worker not supported - cannot show notifications");
+      return;
+    }
+    if (!("Notification" in window)) {
+      console.warn("Notification API not supported");
+      return;
+    }
+    if (Notification.permission !== "granted") {
+      console.warn("Notification permission not granted");
+      return;
+    }
+
+    try {
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg) {
+        console.warn("No service worker registration found");
+        return;
+      }
+      await reg.showNotification(title, {
+        body: body,
+        icon: 'icon-192.png',
+        badge: 'icon-192.png',
+        tag: 'dormdash-delivery-update',
+        renotify: true
+      });
+    } catch (err) {
+      console.error("SW showNotification failed", err);
+    }
+  }
+
+  async function checkStatusUpdates() {
+    try {
+      const ashokaId = normalizeText(localStorage.getItem("user_ashoka_id"));
+      const trackedIds = getTrackedDeliveryIds();
+      if (!ashokaId && trackedIds.length === 0) return;
+
+      const res = await fetch(`${API_BASE}/deliveries`);
+      if (!res.ok) return;
+      const deliveries = await res.json();
+      const trackedSet = new Set(trackedIds);
+      const userDeliveries = deliveries.filter((d) => {
+        const idMatch = trackedSet.has(Number(d.id));
+        const ashokaMatch =
+          !!ashokaId && normalizeText(d.ashoka_id) === ashokaId;
+        return idMatch || ashokaMatch;
+      });
+
+      // Update pending deliveries list
+      updatePendingDeliveries(userDeliveries);
+
+      if (userDeliveries.length > 0) {
+        const latestDelivery = [...userDeliveries].sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0];
+        updateDeliveryStatusUI(latestDelivery?.status || "");
+      } else {
+        updateDeliveryStatusUI("");
+      }
+
+      userDeliveries.forEach(d => {
+        if (d?.id) addTrackedDeliveryId(d.id);
+        const key = `delivery_status_${d.id}`;
+        const prevStatus = localStorage.getItem(key);
+
+        // If no previous status, store and notify for actionable states
+        if (!prevStatus) {
+          localStorage.setItem(key, d.status);
+          notifyForStatus(d.status, true);
+          return;
+        }
+
+        if (prevStatus !== d.status) {
+          localStorage.setItem(key, d.status);
+          notifyForStatus(d.status, false);
+        }
+      });
+    } catch (e) {
+      console.error("Error checking status updates", e);
+    }
+  }
+
+  // Form submission with strict validation for transaction id
+  document.getElementById('deliveryForm').addEventListener('submit', async function(event){
+    event.preventDefault();
+
+    if (!isWithinDeliveryWindow()) {
+      alert('DormDash is accepting requests only from 10:00 AM to 4:00 AM.');
+      return;
+    }
+
+    const service = document.getElementById('service_type').value;
+    const rh = document.getElementById('residence_hall').value;
+    const txn = (document.getElementById('transaction_id').value || '').trim();
+    const phone = digitsOnly(inputValueOrNull('phone_number'));
+    const ashoka = digitsOnly(inputValueOrNull('ashoka_id'));
+    const price = calculatePrice(service, rh);
+
+    if (!service || !rh || price === 0) {
+      alert('Select valid service and residence hall');
+      return;
+    }
+
+    if (!txn || txn.length !== 4 || !/^\d{4}$/.test(txn)) {
+      alert('Enter the last 4 digits of your transaction ID');
+      return;
+    }
+    if (phone.length !== 10) {
+      alert('Phone number must be exactly 10 digits');
+      return;
+    }
+    if (ashoka.length !== 10) {
+      alert('Ashoka ID must be exactly 10 digits');
+      return;
+    }
+
+    if (service === 'Mail') {
+      if (!inputValueOrNull('mail_delivery_day') || !inputValueOrNull('mail_delivery_slot')) {
+        alert('Select mail day and mail delivery slot');
+        return;
+      }
+    }
+
+    if (service === 'Laundry') {
+      const laundryType = inputValueOrNull('laundry_type');
+      if (!laundryType) {
+        alert('Select laundry option: drop-off, pickup, or drop-off + pickup');
+        return;
+      }
+      if (!inputValueOrNull('laundry_code')) {
+        alert('Enter laundry code');
+        return;
+      }
+      if (laundryType === 'drop-off') {
+        if (!inputValueOrNull('laundry_drop_day') || !inputValueOrNull('laundry_drop_time')) {
+          alert('Select drop-off day and time');
+          return;
+        }
+      } else if (laundryType === 'pickup') {
+        if (!inputValueOrNull('laundry_pickup_days') || !inputValueOrNull('laundry_pickup_time')) {
+          alert('Select pickup day and time');
+          return;
+        }
+      } else if (laundryType === 'dropoff+pickup') {
+        const combinedDropDay = document.getElementById('laundry_combined_drop_day');
+        const combinedPickupInput = document.getElementById('laundry_combined_pickup_day');
+        if (!combinedDropDay || !combinedDropDay.value) {
+          alert('Select drop-off day');
+          return;
+        }
+        if (!inputValueOrNull('laundry_combined_drop_time')) {
+          alert('Select drop-off time');
+          return;
+        }
+        if (!combinedPickupInput || !combinedPickupInput.value) {
+          alert('Pickup day is not set; choose drop-off day');
+          return;
+        }
+        if (!inputValueOrNull('laundry_combined_pickup_time')) {
+          alert('Select pickup time');
+          return;
+        }
+      }
+    }
+
+    if (service === 'Tuck Shop' && !inputValueOrNull('tuck_shop_location')) {
+      alert('Select tuck shop location');
+      return;
+    }
+
+    if (service === 'Within-Residence-Hall' && !inputValueOrNull('order_from')) {
+      alert('Enter the food place for Within-Residence-Hall service');
+      return;
+    }
+
+    // collect other form fields (example; adapt to your existing form fields)
+    // Get laundry_drop_day / laundry_pickup_days from the correct fields based on laundry type
+    let laundryPickupDays = inputValueOrNull('laundry_pickup_days');
+    let laundryDropDay = inputValueOrNull('laundry_drop_day');
+    let laundryDropTime = inputValueOrNull('laundry_drop_time');
+    let laundryPickupTime = inputValueOrNull('laundry_pickup_time');
+    const laundryType = inputValueOrNull('laundry_type');
+    if (laundryType === 'dropoff+pickup') {
+      const combinedDropDay = document.getElementById('laundry_combined_drop_day');
+      const combinedPickupInput = document.getElementById('laundry_combined_pickup_day');
+      laundryDropDay = combinedDropDay ? combinedDropDay.value : '';
+      laundryPickupDays = combinedPickupInput ? combinedPickupInput.value : '';
+      laundryDropTime = inputValueOrNull('laundry_combined_drop_time');
+      laundryPickupTime = inputValueOrNull('laundry_combined_pickup_time');
+    }
+
+    const payload = {
+      name: inputValueOrNull('name'),
+      ashoka_id: ashoka,
+      residence_hall: rh,
+      room_number: inputValueOrNull('room_number'),
+      phone_number: phone,
+      service_type: service,
+      laundry_code: inputValueOrNull('laundry_code'),
+      laundry_type: laundryType,
+      laundry_drop_day: laundryDropDay,
+      laundry_drop_time: laundryDropTime,
+      laundry_pickup_days: laundryPickupDays,
+      laundry_pickup_time: laundryPickupTime,
+      mail_delivery_day: inputValueOrNull('mail_delivery_day'),
+      mail_delivery_slot: inputValueOrNull('mail_delivery_slot'),
+      gate_number: inputValueOrNull('gate_number'),
+      package_type: inputValueOrNull('package_type'),
+      additional_details: inputValueOrNull('additional_details'),
+      items_requested: inputValueOrNull('items_requested'),
+      tuck_shop_location: inputValueOrNull('tuck_shop_location'),
+      order_from: inputValueOrNull('order_from'),
+      transaction_id: txn,
+      payment_status: 'paid',
+      price: price
+    };
+
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Submitting...';
+
+    try {
+      const res = await fetch(`${API_BASE}/deliveries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(()=>({detail:'error'}));
+        alert('Submit failed: ' + (body.detail || res.statusText));
+      } else {
+        const createdDelivery = await res.json().catch(() => null);
+        alert('Request created successfully');
+
+        // Save Ashoka ID after successful submission (reliable)
+        const ash = document.getElementById('ashoka_id')?.value?.trim();
+        if (ash) {
+          localStorage.setItem('user_ashoka_id', ash);
+          console.log('Saved user:', ash);
+        }
+        if (createdDelivery?.id) {
+          addTrackedDeliveryId(createdDelivery.id);
+          localStorage.setItem(`delivery_status_${createdDelivery.id}`, createdDelivery.status || "pending");
+          updateDeliveryStatusUI(createdDelivery.status || "pending");
+        }
+
+        // Update pending deliveries list immediately
+        await checkStatusUpdates();
+
+        // Backup permission prompt on a clear user action path.
+        if ("Notification" in window && Notification.permission === "default") {
+          await requestNotificationPermission();
+        }
+
+        // Optionally clear form
+        document.getElementById('deliveryForm').reset();
+        updatePriceDisplay();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Network error while submitting');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Submit request';
+    }
+  });
+  
+  // Start permission request and polling on page load
+  window.addEventListener("load", async () => {
+    await ensureServiceWorkerRegistration();
+    await requestNotificationPermission();
+    // initial immediate check then poll every 3s
+    checkStatusUpdates();
+    setInterval(checkStatusUpdates, 3000);
+  });
+
+    // Dynamic field logic
+    const serviceSelect = document.getElementById('service_type');
+    const residenceSelect = document.getElementById('residence_hall');
+    const priceDisplayEl = document.getElementById('priceDisplay');
+
+    const mailFields = document.getElementById('mail_fields');
+    const laundryFields = document.getElementById('laundry_fields');
+    const gateFields = document.getElementById('gate_fields');
+    const tuckFields = document.getElementById('tuck_fields');
+    const withinRhFields = document.getElementById('within_rh_fields');
+    const laundryTypeSelect = document.getElementById('laundry_type');
+    const laundryDropFields = document.getElementById('laundry_drop_fields');
+    const laundryPickupFields = document.getElementById('laundry_pickup_fields');
+    const laundryCombinedFields = document.getElementById('laundry_combined_fields');
+
+    function hideAllExtras(){
+      if(mailFields) mailFields.classList.add('hidden');
+      if(laundryFields) laundryFields.classList.add('hidden');
+      if(gateFields) gateFields.classList.add('hidden');
+      if(tuckFields) tuckFields.classList.add('hidden');
+      if(withinRhFields) withinRhFields.classList.add('hidden');
+      if(laundryDropFields) laundryDropFields.classList.add('hidden');
+      if(laundryPickupFields) laundryPickupFields.classList.add('hidden');
+      if(laundryCombinedFields) laundryCombinedFields.classList.add('hidden');
+    }
+
+    function updateLaundryModeFields(){
+      if(!laundryTypeSelect) return;
+      if(laundryDropFields) laundryDropFields.classList.add('hidden');
+      if(laundryPickupFields) laundryPickupFields.classList.add('hidden');
+      if(laundryCombinedFields) laundryCombinedFields.classList.add('hidden');
+      if(laundryTypeSelect.value === 'drop-off') {
+        if(laundryDropFields) laundryDropFields.classList.remove('hidden');
+      } else if(laundryTypeSelect.value === 'pickup') {
+        if(laundryPickupFields) laundryPickupFields.classList.remove('hidden');
+      } else if(laundryTypeSelect.value === 'dropoff+pickup') {
+        if(laundryCombinedFields) laundryCombinedFields.classList.remove('hidden');
+        // Reset combined fields when switching to this type
+        const combinedDropDaySelect = document.getElementById('laundry_combined_drop_day');
+        const combinedPickupDayInput = document.getElementById('laundry_combined_pickup_day');
+        if (combinedDropDaySelect) combinedDropDaySelect.value = '';
+        if (combinedPickupDayInput) combinedPickupDayInput.value = '';
+        updateCombinedPickupDay();
+      }
+    }
+
+    function updateLaundryDayOptions(){
+      const rh = residenceSelect ? residenceSelect.value : '';
+      const rhNum = Number(rh);
+
+      // Update drop-off days for standalone drop-off
+      const dropDaySelect = document.getElementById('laundry_drop_day');
+      if (dropDaySelect) {
+        dropDaySelect.innerHTML = '<option value="">Select day</option>';
+        if (rhNum >= 1 && rhNum <= 5) {
+          // For RH 1-5, only Monday and Thursday
+          dropDaySelect.innerHTML += '<option value="Monday">Monday</option>';
+          dropDaySelect.innerHTML += '<option value="Thursday">Thursday</option>';
+        }
+      }
+
+      // Update pickup days (standalone pickup - only Wednesday and Saturday)
+      const pickupDaysSelect = document.getElementById('laundry_pickup_days');
+      if (pickupDaysSelect) {
+        pickupDaysSelect.innerHTML = '<option value="">Select day</option>';
+        pickupDaysSelect.innerHTML += '<option value="Wednesday">Wednesday</option>';
+        pickupDaysSelect.innerHTML += '<option value="Saturday">Saturday</option>';
+      }
+    }
+
+    function updateCombinedPickupDay(){
+      const rh = residenceSelect ? residenceSelect.value : '';
+      const rhNum = Number(rh);
+      const dropoffDaySelect = document.getElementById('laundry_combined_drop_day');
+      const pickupDayField = document.getElementById('laundry_combined_pickup_day');
+      
+      if (!dropoffDaySelect || !pickupDayField) return;
+      
+      const dropoffDay = dropoffDaySelect.value;
+      let pickupDay = '';
+      
+      if (dropoffDay) {
+        if (rhNum === 6 || rhNum === 7) {
+          // For RH 6,7: Monday→Thursday, Thursday→Monday
+          if (dropoffDay === 'Monday') pickupDay = 'Thursday';
+          else if (dropoffDay === 'Thursday') pickupDay = 'Monday';
+        } else if (rhNum >= 1 && rhNum <= 5) {
+          // For RH 1-5: Monday→Wednesday, Thursday→Saturday
+          if (dropoffDay === 'Monday') pickupDay = 'Wednesday';
+          else if (dropoffDay === 'Thursday') pickupDay = 'Saturday';
+        }
+      }
+      
+      pickupDayField.value = pickupDay;
+    }
+
+    // TASK 1: fixed service change logic (uses exact dropdown values)
+    if (serviceSelect) {
+      serviceSelect.addEventListener('change', () => {
+        hideAllExtras();
+        const svc = serviceSelect.value;
+
+        if (svc === 'Mail') {
+          if(mailFields) mailFields.classList.remove('hidden');
+        } else if (svc === 'Laundry') {
+          if(laundryFields) laundryFields.classList.remove('hidden');
+          updateLaundryModeFields();
+          updateLaundryDayOptions();
+          updateCombinedPickupDay();
+        } else if (svc === 'Gate Pickup') {
+          if(gateFields) gateFields.classList.remove('hidden');
+        } else if (svc === 'Tuck Shop') {
+          if(tuckFields) tuckFields.classList.remove('hidden');
+        } else if (svc === 'Within-Residence-Hall') {
+          if(withinRhFields) withinRhFields.classList.remove('hidden');
+        }
+        updatePriceDisplay();
+      });
+    }
+
+    // TASK 2: fixed pricing function (uses exact dropdown values)
+    function calculatePrice(service, rh) {
+      const r = Number(rh);
+
+      if (service === 'Mail') {
+        if (r === 3) return 50;
+        if ([1,2,4,5].includes(r)) return 75;
+        if ([6,7].includes(r)) return 100;
+      }
+
+      if (service === 'Laundry') {
+        const laundryType = document.getElementById('laundry_type')?.value;
+        
+        // Drop-off + Pickup pricing
+        if (laundryType === 'dropoff+pickup') {
+          if ([5,6,7].includes(r)) return 85;
+          if ([3,4].includes(r)) return 125;
+          if ([1,2].includes(r)) return 175;
+        }
+        
+        // Drop-off and Pickup pricing (same as before)
+        if ([5,6,7].includes(r)) return 50;
+        if ([3,4].includes(r)) return 75;
+        if ([1,2].includes(r)) return 100;
+      }
+
+      if (service === 'Gate Pickup') {
+        const gate = document.getElementById('gate_number')?.value;
+        if (!gate) return 0;
+        if (gate === '1') {
+          if ([1,2].includes(r)) return 50;
+          if (r === 3) return 75;
+          if ([4,5].includes(r)) return 100;
+        }
+        if (gate === '2') {
+          if ([1,2].includes(r)) return 100;
+          if (r === 3) return 75;
+          if ([4,5].includes(r)) return 50;
+        }
+      }
+
+      if (service === 'Tuck Shop') {
+        const tuckShopLocation = document.getElementById('tuck_shop_location')?.value;
+        if (!tuckShopLocation) return 0;
+        if (tuckShopLocation === 'tuck shop mess') {
+          if ([1,2].includes(r)) return 50;
+          if (r === 3) return 75;
+          if ([4,5].includes(r)) return 100;
+        }
+        if (tuckShopLocation === 'tuck shop rh5') {
+          if ([1,2].includes(r)) return 100;
+          if (r === 3) return 75;
+          if ([4,5].includes(r)) return 50;
+        }
+      }
+
+      if (service === 'Within-Residence-Hall') {
+        return 25;
+      }
+
+      return 0;
+    }
+
+    // TASK 3: ensure updatePriceDisplay triggered on both selects
+    function updatePriceDisplay(){
+      if(!priceDisplayEl) return 0;
+      const svc = serviceSelect ? serviceSelect.value : '';
+      const rh = residenceSelect ? residenceSelect.value : '';
+      const price = calculatePrice(svc, rh);
+      priceDisplayEl.textContent = `Price: ₹${price}`;
+      priceDisplayEl.dataset.price = price; // NEW: store price in dataset
+      return price;
+    }
+
+    if (serviceSelect) serviceSelect.addEventListener('change', updatePriceDisplay);
+    if (residenceSelect) residenceSelect.addEventListener('change', () => {
+      updatePriceDisplay();
+      updateLaundryDayOptions();
+      updateCombinedPickupDay();
+    });
+    if (laundryTypeSelect) laundryTypeSelect.addEventListener('change', updateLaundryModeFields);
+    const combinedDropDaySelect = document.getElementById('laundry_combined_drop_day');
+    if (combinedDropDaySelect) combinedDropDaySelect.addEventListener('change', updateCombinedPickupDay);
+    const gateNumberSelect = document.getElementById('gate_number');
+    if (gateNumberSelect) gateNumberSelect.addEventListener('change', updatePriceDisplay);
+    const tuckShopLocationSelect = document.getElementById('tuck_shop_location');
+    if (tuckShopLocationSelect) tuckShopLocationSelect.addEventListener('change', updatePriceDisplay);
+
+    // initialize UI state
+    hideAllExtras();
+    updateLaundryModeFields();
+    updatePriceDisplay();
+    updateLaundryDayOptions();
+
+    document.getElementById('payBtn').addEventListener('click', function(){
+      const service = document.getElementById('service_type').value;
+      const rh = document.getElementById('residence_hall').value;
+      const price = calculatePrice(service, rh);
+      if (!service || !rh || price === 0) {
+        alert('Select service and residence hall first');
+        return;
+      }
+      // open UPI app / handler
+      const link = generateUPILink(price);
+      // Attempt to open UPI link
+      window.location.href = link;
+    });
+
+    // initialize price on load
+    updatePriceDisplay();
+  </script>
+</body>
+</html>
