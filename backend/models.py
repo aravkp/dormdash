@@ -1,6 +1,10 @@
 from sqlalchemy import Column, Integer, String, DateTime
-from database import Base
 from datetime import datetime
+
+try:
+    from .database import Base
+except ImportError:
+    from database import Base  # type: ignore
 
 class Delivery(Base):
     __tablename__ = "deliveries"

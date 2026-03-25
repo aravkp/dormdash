@@ -3,8 +3,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from fastapi import HTTPException
 
-import models
-from schemas import DeliveryCreate
+try:
+    from . import models
+    from .schemas import DeliveryCreate
+except ImportError:
+    import models  # type: ignore
+    from schemas import DeliveryCreate  # type: ignore
 
 def create_delivery(db: Session, delivery: DeliveryCreate) -> models.Delivery:
     svc = (delivery.service_type or "").lower()
@@ -209,6 +213,8 @@ def approve_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]
     d = db.query(models.Delivery).filter(models.Delivery.id == delivery_id).first()
     if not d:
         return None
+    if d.status == "delivered":
+        raise HTTPException(status_code=400, detail="Delivered deliveries cannot be approved")
     d.status = "approved"
     db.add(d)
     db.commit()
@@ -219,17 +225,13 @@ def reject_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]:
     d = db.query(models.Delivery).filter(models.Delivery.id == delivery_id).first()
     if not d:
         return None
+    if d.status not in {"pending", "approved"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending or approved deliveries can be rejected",
+        )
     d.status = "rejected"
-    db.add(d)
-    db.commit()
-    db.refresh(d)
-    return d
-
-def reject_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]:
-    d = db.query(models.Delivery).filter(models.Delivery.id == delivery_id).first()
-    if not d:
-        return None
-    d.status = "rejected"
+    d.courier = None
     db.add(d)
     db.commit()
     db.refresh(d)

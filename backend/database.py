@@ -21,7 +21,10 @@ def get_db() -> Generator:
 
 def init_db():
     # ensure models module is imported so tables are registered on Base
-    import models  # simple import (no package) — works when running from backend/
+    try:
+        from . import models  # noqa: F401
+    except ImportError:
+        import models  # type: ignore  # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     # Lightweight migration for existing SQLite DBs.

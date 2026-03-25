@@ -3,11 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from . import crud, models, schemas
-from .database import SessionLocal, engine
-
-# Import Delivery model for inline queries
-from .models import Delivery
+try:
+    from . import crud, models, schemas
+    from .database import SessionLocal, engine
+except ImportError:
+    import crud  # type: ignore
+    import models  # type: ignore
+    import schemas  # type: ignore
+    from database import SessionLocal, engine  # type: ignore
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -82,13 +85,7 @@ def assign_delivery(delivery_id: int, assign: schemas.DeliveryAccept, db: Sessio
 
 @app.post("/deliveries/{delivery_id}/reject", response_model=schemas.DeliveryResponse)
 def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
-    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
-
+    delivery = crud.reject_delivery(db, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
-
-    delivery.status = "rejected"
-    db.commit()
-    db.refresh(delivery)
-
     return delivery
