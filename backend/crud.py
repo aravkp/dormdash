@@ -214,3 +214,23 @@ def approve_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]
     db.commit()
     db.refresh(d)
     return d
+
+def reject_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]:
+    d = db.query(models.Delivery).filter(models.Delivery.id == delivery_id).first()
+    if not d:
+        return None
+    d.status = "rejected"
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    return d
+
+def reject_delivery(db: Session, delivery_id: int) -> Optional[models.Delivery]:
+    d = db.query(models.Delivery).filter(models.Delivery.id == delivery_id).first()
+    if not d:
+        return None
+    d.status = "rejected"
+    db.add(d)
+    db.commit()
+    db.refresh(d)
+    return d

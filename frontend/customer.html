@@ -108,6 +108,7 @@
     .delivery-status.approved { background: #dbeafe; color: #1e40af; }
     .delivery-status.accepted { background: #dcfce7; color: #166534; }
     .delivery-status.delivered { background: #d1fae5; color: #065f46; }
+    .delivery-status.rejected { background: #fee2e2; color: #991b1b; }
     .delivery-details {
       font-size: 13px;
       color: #6b7280;
@@ -131,8 +132,8 @@
     </div>
 
     <div id="pendingDeliveriesSection" class="pending-deliveries">
-      <h3>Your Deliveries</h3>
-      <div id="pendingDeliveriesList">
+      <h3 id="deliveriesToggle" style="cursor:pointer;user-select:none"><span id="deliveriesArrow">▼</span> Your Deliveries</h3>
+      <div id="pendingDeliveriesList" style="display:none">
         <div class="no-deliveries">No deliveries yet</div>
       </div>
     </div>
@@ -185,35 +186,6 @@
       <div class="form-row">
       <label for="room_number">Room number</label>
       <input id="room_number" name="room_number" type="text" placeholder="e.g. 226A" required />
-      </div>
-
-      <div id="priceDisplay" style="margin-top:8px;font-weight:600">Price: ₹0</div>
-
-      <!-- Payment UPI block inserted above submit -->
-      <div style="margin-top:16px;padding:12px;border-radius:10px;border:1px dashed #e5e7eb;background:#fafafa">
-        <div style="font-weight:700;margin-bottom:6px">Payment (UPI)</div>
-
-        <div style="font-size:13px;margin-bottom:8px;color:#6b7280">
-          Step 1: Pay via UPI<br>
-          Step 2: Enter transaction ID<br>
-          Step 3: Submit request
-        </div>
-
-        <div style="margin-bottom:8px">
-          <strong>UPI ID:</strong> adhirajvohra@okhdfcbank
-        </div>
-
-        <button type="button" id="payBtn"
-          style="background:#14b8a6;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;margin-bottom:10px">
-          Pay
-        </button>
-
-        <label style="display:block;margin-top:6px">Last 4 digits of Transaction ID</label>
-        <input type="text" id="transaction_id" placeholder="Enter last 4 digits" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required />
-
-        <div style="font-size:12px;color:#6b7280;margin-top:6px">
-          Pay first, then enter the last 4 digits of your transaction ID above
-        </div>
       </div>
 
       <!-- Mail extra -->
@@ -369,6 +341,37 @@
         </div>
       </div>
 
+      <!-- Payment UPI block (moved before submit) -->
+      <div style="margin-top:16px;border-radius:10px;border:1px dashed #e5e7eb;background:#fafafa;overflow:hidden">
+        <div id="priceDisplay" style="background:#f9fafb;padding:12px;border-bottom:1px solid #e5e7eb;font-weight:700;font-size:18px">Price: ₹0</div>
+        
+        <div style="padding:12px">
+          <div style="font-weight:700;margin-bottom:6px">Payment (UPI)</div>
+
+          <div style="font-size:13px;margin-bottom:8px;color:#6b7280">
+            Step 1: Pay via UPI<br>
+            Step 2: Enter transaction ID<br>
+            Step 3: Submit request
+          </div>
+
+          <div style="margin-bottom:8px">
+            <strong>UPI ID:</strong> adhirajvohra@okhdfcbank
+          </div>
+
+          <button type="button" id="payBtn"
+            style="background:#14b8a6;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer;margin-bottom:10px">
+            Pay
+          </button>
+
+          <label style="display:block;margin-top:6px">Last 4 digits of Transaction ID</label>
+          <input type="text" id="transaction_id" placeholder="Enter last 4 digits" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" required />
+
+          <div style="font-size:12px;color:#6b7280;margin-top:6px">
+            Pay first, then enter the last 4 digits of your transaction ID above
+          </div>
+        </div>
+      </div>
+
       <div style="margin-top:12px">
         <button type="submit" id="submitBtn" style="background:#14b8a6;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer">Submit request</button>
       </div>
@@ -376,8 +379,35 @@
   </div>
 
   <script>
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = "https://dormdash-b0ri.onrender.com";
   const TRACKED_DELIVERY_IDS_KEY = "tracked_delivery_ids";
+
+  // FIX: localStorage persistence helpers
+  function loadUserDetails() {
+    const nameEl = document.getElementById('name');
+    const phoneEl = document.getElementById('phone_number');
+    const ashokaEl = document.getElementById('ashoka_id');
+    
+    if (nameEl && localStorage.getItem('user_name')) nameEl.value = localStorage.getItem('user_name');
+    if (phoneEl && localStorage.getItem('user_phone')) phoneEl.value = localStorage.getItem('user_phone');
+    if (ashokaEl && localStorage.getItem('user_ashoka_id')) ashokaEl.value = localStorage.getItem('user_ashoka_id');
+  }
+
+  function saveUserDetails(name, phone, ashoka) {
+    if (name) localStorage.setItem('user_name', name);
+    if (phone) localStorage.setItem('user_phone', phone);
+    if (ashoka) localStorage.setItem('user_ashoka_id', ashoka);
+  }
+
+  function toggleDeliveries() {
+    const list = document.getElementById('pendingDeliveriesList');
+    const arrow = document.getElementById('deliveriesArrow');
+    if (list) {
+      const isHidden = list.style.display === 'none';
+      list.style.display = isHidden ? 'block' : 'none';
+      arrow.textContent = isHidden ? '▲' : '▼';
+    }
+  }
 
   function normalizeText(value) {
     return String(value || "").trim().toLowerCase();
@@ -412,6 +442,7 @@
     if (status === "accepted") return "Dasher on the way";
     if (status === "delivered") return "Delivered";
     if (status === "pending") return "Pending Approval";
+    if (status === "rejected") return "Delivery Rejected";
     return "No ongoing delivery";
   }
 
@@ -469,6 +500,10 @@
 
     if (!deliveries || deliveries.length === 0) {
       container.innerHTML = '<div class="no-deliveries">No deliveries yet</div>';
+      // Auto-collapse when no deliveries
+      container.style.display = 'none';
+      const arrow = document.getElementById('deliveriesArrow');
+      if (arrow) arrow.textContent = '▼';
       return;
     }
 
@@ -480,6 +515,11 @@
     });
 
     container.innerHTML = sortedDeliveries.map(d => renderDeliveryItem(d)).join('');
+    
+    // Auto-expand when deliveries exist
+    container.style.display = 'block';
+    const arrow = document.getElementById('deliveriesArrow');
+    if (arrow) arrow.textContent = '▲';
   }
 
   function inputValueOrNull(id) {
@@ -559,6 +599,15 @@
           ? "Your package has already arrived!"
           : "Your package has arrived!"
       );
+      return;
+    }
+    if (status === "rejected") {
+      showNotification(
+        "Delivery Rejected ❌",
+        isInitial
+          ? "Your delivery request was rejected. Please check details or try again."
+          : "Delivery Rejected ❌ – Please check details or try again"
+      );
     }
   }
 
@@ -601,9 +650,8 @@
     try {
       const ashokaId = normalizeText(localStorage.getItem("user_ashoka_id"));
       const trackedIds = getTrackedDeliveryIds();
-      if (!ashokaId && trackedIds.length === 0) return;
 
-      const res = await fetch(`${API_BASE}/deliveries`);
+      const res = await fetch(`${API_BASE}/deliveries?limit=50`);
       if (!res.ok) return;
       const deliveries = await res.json();
       const trackedSet = new Set(trackedIds);
@@ -660,23 +708,20 @@
     const txn = (document.getElementById('transaction_id').value || '').trim();
     const phone = digitsOnly(inputValueOrNull('phone_number'));
     const ashoka = digitsOnly(inputValueOrNull('ashoka_id'));
-    const price = calculatePrice(service, rh);
 
-    if (!service || !rh || price === 0) {
-      alert('Select valid service and residence hall');
-      return;
-    }
-
-    if (!txn || txn.length !== 4 || !/^\d{4}$/.test(txn)) {
-      alert('Enter the last 4 digits of your transaction ID');
-      return;
-    }
+    // FIX: phone and Ashoka ID validation
     if (phone.length !== 10) {
       alert('Phone number must be exactly 10 digits');
       return;
     }
     if (ashoka.length !== 10) {
       alert('Ashoka ID must be exactly 10 digits');
+      return;
+    }
+
+    // FIX: improved validation order
+    if (!service || !rh) {
+      alert('Select valid service and residence hall');
       return;
     }
 
@@ -729,13 +774,41 @@
       }
     }
 
-    if (service === 'Tuck Shop' && !inputValueOrNull('tuck_shop_location')) {
-      alert('Select tuck shop location');
-      return;
+    if (service === 'Gate Pickup') {
+      if (!inputValueOrNull('gate_number')) {
+        alert('Select gate number');
+        return;
+      }
+      // package type optional by design
+    }
+
+    if (service === 'Tuck Shop') {
+      if (!inputValueOrNull('tuck_shop_location')) {
+        alert('Select tuck shop location');
+        return;
+      }
+      if (!inputValueOrNull('items_requested')) {
+        alert('Enter items requested for Tuck Shop');
+        return;
+      }
     }
 
     if (service === 'Within-Residence-Hall' && !inputValueOrNull('order_from')) {
       alert('Enter the food place for Within-Residence-Hall service');
+      return;
+    }
+
+    // FIX: transaction id validation
+    if (!/^[0-9]{4}$/.test(txn)) {
+      alert('Enter a valid 4-digit transaction ID');
+      return;
+    }
+
+    const price = calculatePrice(service, rh);
+
+    // FIX: price check after service-specific validation
+    if (price === 0) {
+      alert('Price could not be calculated; ensure all required options are selected');
       return;
     }
 
@@ -798,12 +871,12 @@
         const createdDelivery = await res.json().catch(() => null);
         alert('Request created successfully');
 
-        // Save Ashoka ID after successful submission (reliable)
-        const ash = document.getElementById('ashoka_id')?.value?.trim();
-        if (ash) {
-          localStorage.setItem('user_ashoka_id', ash);
-          console.log('Saved user:', ash);
-        }
+        // Save user details for future form fills
+        const nameVal = document.getElementById('name')?.value?.trim();
+        const phoneVal = document.getElementById('phone_number')?.value?.trim();
+        const ashokaVal = document.getElementById('ashoka_id')?.value?.trim();
+        saveUserDetails(nameVal, phoneVal, ashokaVal);
+
         if (createdDelivery?.id) {
           addTrackedDeliveryId(createdDelivery.id);
           localStorage.setItem(`delivery_status_${createdDelivery.id}`, createdDelivery.status || "pending");
@@ -833,11 +906,16 @@
   
   // Start permission request and polling on page load
   window.addEventListener("load", async () => {
+    loadUserDetails();
     await ensureServiceWorkerRegistration();
     await requestNotificationPermission();
     // initial immediate check then poll every 3s
     checkStatusUpdates();
-    setInterval(checkStatusUpdates, 3000);
+    setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        checkStatusUpdates();
+      }
+    }, 10000);
   });
 
     // Dynamic field logic
@@ -890,25 +968,31 @@
       const rh = residenceSelect ? residenceSelect.value : '';
       const rhNum = Number(rh);
 
-      // Update drop-off days for standalone drop-off
       const dropDaySelect = document.getElementById('laundry_drop_day');
       if (dropDaySelect) {
         dropDaySelect.innerHTML = '<option value="">Select day</option>';
-        if (rhNum >= 1 && rhNum <= 5) {
-          // For RH 1-5, only Monday and Thursday
-          dropDaySelect.innerHTML += '<option value="Monday">Monday</option>';
-          dropDaySelect.innerHTML += '<option value="Thursday">Thursday</option>';
-        }
+
+        // All RHs have Monday and Thursday dropoff
+        dropDaySelect.innerHTML += '<option value="Monday">Monday</option>';
+        dropDaySelect.innerHTML += '<option value="Thursday">Thursday</option>';
       }
 
-      // Update pickup days (standalone pickup - only Wednesday and Saturday)
       const pickupDaysSelect = document.getElementById('laundry_pickup_days');
       if (pickupDaysSelect) {
         pickupDaysSelect.innerHTML = '<option value="">Select day</option>';
-        pickupDaysSelect.innerHTML += '<option value="Wednesday">Wednesday</option>';
-        pickupDaysSelect.innerHTML += '<option value="Saturday">Saturday</option>';
+        
+        if (rhNum >= 1 && rhNum <= 5) {
+          // RH1-5: Wednesday and Saturday pickup
+          pickupDaysSelect.innerHTML += '<option value="Wednesday">Wednesday</option>';
+          pickupDaysSelect.innerHTML += '<option value="Saturday">Saturday</option>';
+        } else if (rhNum === 6 || rhNum === 7) {
+          // RH6-7: Monday and Thursday pickup
+          pickupDaysSelect.innerHTML += '<option value="Monday">Monday</option>';
+          pickupDaysSelect.innerHTML += '<option value="Thursday">Thursday</option>';
+        }
       }
     }
+    
 
     function updateCombinedPickupDay(){
       const rh = residenceSelect ? residenceSelect.value : '';
@@ -922,18 +1006,33 @@
       let pickupDay = '';
       
       if (dropoffDay) {
-        if (rhNum === 6 || rhNum === 7) {
-          // For RH 6,7: Monday→Thursday, Thursday→Monday
-          if (dropoffDay === 'Monday') pickupDay = 'Thursday';
-          else if (dropoffDay === 'Thursday') pickupDay = 'Monday';
-        } else if (rhNum >= 1 && rhNum <= 5) {
-          // For RH 1-5: Monday→Wednesday, Thursday→Saturday
+        if (rhNum >= 1 && rhNum <= 5) {
+          // RH1-5: Monday→Wednesday, Thursday→Saturday
           if (dropoffDay === 'Monday') pickupDay = 'Wednesday';
           else if (dropoffDay === 'Thursday') pickupDay = 'Saturday';
+        } else if (rhNum === 6 || rhNum === 7) {
+          // RH6-7: Monday→Thursday, Thursday→Monday (cycling through available pickup days)
+          if (dropoffDay === 'Monday') pickupDay = 'Thursday';
+          else if (dropoffDay === 'Thursday') pickupDay = 'Monday';
         }
       }
       
       pickupDayField.value = pickupDay;
+    }
+
+    // FIX: added function to update combined drop day options for RH6-7
+    function updateCombinedDropDayOptions(){
+      const rh = residenceSelect ? residenceSelect.value : '';
+      const rhNum = Number(rh);
+      const combinedDropDaySelect = document.getElementById('laundry_combined_drop_day');
+      
+      if (combinedDropDaySelect) {
+        combinedDropDaySelect.innerHTML = '<option value="">Select day</option>';
+        
+        // All RHs have Monday and Thursday dropoff
+        combinedDropDaySelect.innerHTML += '<option value="Monday">Monday</option>';
+        combinedDropDaySelect.innerHTML += '<option value="Thursday">Thursday</option>';
+      }
     }
 
     // TASK 1: fixed service change logic (uses exact dropdown values)
@@ -948,6 +1047,7 @@
           if(laundryFields) laundryFields.classList.remove('hidden');
           updateLaundryModeFields();
           updateLaundryDayOptions();
+          updateCombinedDropDayOptions(); // FIX: ensure combined drop day options are set for Laundry
           updateCombinedPickupDay();
         } else if (svc === 'Gate Pickup') {
           if(gateFields) gateFields.classList.remove('hidden');
@@ -967,21 +1067,21 @@
       if (service === 'Mail') {
         if (r === 3) return 50;
         if ([1,2,4,5].includes(r)) return 75;
-        if ([6,7].includes(r)) return 100;
+        if ([6,7].includes(r)) return 100; // FIX: RH6 and RH7 already handled
       }
 
       if (service === 'Laundry') {
         const laundryType = document.getElementById('laundry_type')?.value;
-        
+
         // Drop-off + Pickup pricing
         if (laundryType === 'dropoff+pickup') {
-          if ([5,6,7].includes(r)) return 85;
+          if ([5,6,7].includes(r)) return 85; // FIX: RH6 and RH7 already included
           if ([3,4].includes(r)) return 125;
           if ([1,2].includes(r)) return 175;
         }
-        
+
         // Drop-off and Pickup pricing (same as before)
-        if ([5,6,7].includes(r)) return 50;
+        if ([5,6,7].includes(r)) return 50; // FIX: RH6 and RH7 already included
         if ([3,4].includes(r)) return 75;
         if ([1,2].includes(r)) return 100;
       }
@@ -992,12 +1092,12 @@
         if (gate === '1') {
           if ([1,2].includes(r)) return 50;
           if (r === 3) return 75;
-          if ([4,5].includes(r)) return 100;
+          if ([4,5,6,7].includes(r)) return 100; // FIX: added RH6 and RH7 support
         }
         if (gate === '2') {
           if ([1,2].includes(r)) return 100;
           if (r === 3) return 75;
-          if ([4,5].includes(r)) return 50;
+          if ([4,5,6,7].includes(r)) return 50; // FIX: added RH6 and RH7 support
         }
       }
 
@@ -1007,17 +1107,17 @@
         if (tuckShopLocation === 'tuck shop mess') {
           if ([1,2].includes(r)) return 50;
           if (r === 3) return 75;
-          if ([4,5].includes(r)) return 100;
+          if ([4,5,6,7].includes(r)) return 100; // FIX: added RH6 and RH7 support
         }
         if (tuckShopLocation === 'tuck shop rh5') {
           if ([1,2].includes(r)) return 100;
           if (r === 3) return 75;
-          if ([4,5].includes(r)) return 50;
+          if ([4,5,6,7].includes(r)) return 50; // FIX: added RH6 and RH7 support
         }
       }
 
       if (service === 'Within-Residence-Hall') {
-        return 25;
+        return 25; // FIX: already handles all RHs
       }
 
       return 0;
@@ -1031,13 +1131,28 @@
       const price = calculatePrice(svc, rh);
       priceDisplayEl.textContent = `Price: ₹${price}`;
       priceDisplayEl.dataset.price = price; // NEW: store price in dataset
+      
+      // Disable Pay button if price is invalid
+      const payBtn = document.getElementById('payBtn');
+      if (payBtn) {
+        payBtn.disabled = price === 0;
+      }
+      
       return price;
+    }
+
+    // FIX: added missing UPI helper function
+    function generateUPILink(amount) {
+      const upiId = "adhirajvohra@okhdfcbank";
+      const name = "DormDash";
+      return `upi://pay?pa=${upiId}&pn=${name}&am=${amount}&cu=INR`;
     }
 
     if (serviceSelect) serviceSelect.addEventListener('change', updatePriceDisplay);
     if (residenceSelect) residenceSelect.addEventListener('change', () => {
       updatePriceDisplay();
       updateLaundryDayOptions();
+      updateCombinedDropDayOptions(); // FIX: added to update combined drop day options for RH6-7
       updateCombinedPickupDay();
     });
     if (laundryTypeSelect) laundryTypeSelect.addEventListener('change', updateLaundryModeFields);
@@ -1048,20 +1163,32 @@
     const tuckShopLocationSelect = document.getElementById('tuck_shop_location');
     if (tuckShopLocationSelect) tuckShopLocationSelect.addEventListener('change', updatePriceDisplay);
 
+    // Attach event listener for deliveries toggle
+    const deliveriesToggle = document.getElementById('deliveriesToggle');
+    if (deliveriesToggle) deliveriesToggle.addEventListener('click', toggleDeliveries);
+
     // initialize UI state
     hideAllExtras();
     updateLaundryModeFields();
     updatePriceDisplay();
     updateLaundryDayOptions();
+    updateCombinedDropDayOptions(); // FIX: added to initialize combined drop day options for RH6-7
 
     document.getElementById('payBtn').addEventListener('click', function(){
       const service = document.getElementById('service_type').value;
       const rh = document.getElementById('residence_hall').value;
       const price = calculatePrice(service, rh);
-      if (!service || !rh || price === 0) {
+
+      // FIX: improved validation for pay path
+      if (!service || !rh) {
         alert('Select service and residence hall first');
         return;
       }
+      if (price === 0) {
+        alert('Unable to compute price; please verify your selections');
+        return;
+      }
+
       // open UPI app / handler
       const link = generateUPILink(price);
       // Attempt to open UPI link

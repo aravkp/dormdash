@@ -38,6 +38,8 @@
     .hidden{display:none}
     @media (max-width:980px){ .wrap{grid-template-columns:1fr; } }
   </style>
+  <link rel="manifest" href="manifest-courier.json">
+  <meta name="theme-color" content="#14b8a6">
 </head>
 <body>
   <!-- Login section -->
@@ -81,7 +83,15 @@
   </div>
 
   <script>
-    const API_BASE = "http://127.0.0.1:8000";
+    const API_BASE = "https://dormdash-b0ri.onrender.com";
+    const COURIER_APPROVED_IDS_KEY = 'courier_approved_notified_ids';
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js").catch(console.error);
+    }
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission().catch(console.error);
+    }
 
     // UI elements & state
     let courierId = null;
@@ -91,6 +101,19 @@
     const startBtn = document.getElementById('startBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const courierLabel = document.getElementById('courierLabel');
+
+    function getApprovedIds(){
+      try {
+        const raw = localStorage.getItem(COURIER_APPROVED_IDS_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        console.error('Failed to parse approved IDs', e);
+        return [];
+      }
+    }
+    function setApprovedIds(ids){
+      localStorage.setItem(COURIER_APPROVED_IDS_KEY, JSON.stringify(ids));
+    }
 
     // Rendering helpers
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
@@ -194,6 +217,30 @@
         const res = await fetch(`${API_BASE}/deliveries/courier/${encodeURIComponent(courierId)}`);
         if(!res.ok) throw new Error('Failed to load my deliveries');
         const list = await res.json();
+
+        // Notify about newly approved deliveries for this courier
+        try {
+          const approvedIds = getApprovedIds();
+          const newlyApproved = list
+            .filter(d => String((d.status||'').toLowerCase()) === 'approved' && !approvedIds.includes(String(d.id)))
+            .map(d => String(d.id));
+
+          if (newlyApproved.length) {
+            const updated = Array.from(new Set([...approvedIds, ...newlyApproved]));
+            setApprovedIds(updated);
+            if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
+              navigator.serviceWorker.ready.then(reg => {
+                reg.showNotification("Pickup Ready 📦", {
+                  body: "A delivery is ready for pickup",
+                  icon: "icon-192.png"
+                });
+              }).catch(console.error);
+            }
+          }
+        } catch (err) {
+          console.error('Courier approval notification check failed', err);
+        }
+
         if(!Array.isArray(list) || list.length===0){ container.innerHTML = '<div class="small">No assigned deliveries</div>'; return; }
         container.innerHTML = list.map(d => renderMyCard(d)).join('');
       } catch(e){

@@ -32,9 +32,13 @@
     .badge.tuckshop{background:var(--badge-tuck)}
     .service-details{font-size:13px;color:#374151;margin-top:8px;background:#fafafa;padding:8px;border-radius:8px;border:1px dashed #eef2ff}
     .filters{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .status-filter{border:1px solid #e5e7eb;background:#f8fafc;color:#111827;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px}
+    .status-filter.active{background:#bfdbfe;color:#1d4ed8;border-color:#60a5fa}
     .small{font-size:12px;color:var(--muted)}
     .hidden{display:none}
   </style>
+  <link rel="manifest" href="manifest-admin.json">
+  <meta name="theme-color" content="#14b8a6">
 </head>
 <body>
   <div class="container">
@@ -44,6 +48,13 @@
         <div class="subtitle">Overview of all deliveries</div>
       </div>
       <div class="controls">
+        <div id="statusFilterButtons" style="display:flex;gap:8px;align-items:center">
+          <button id="filterAll" class="status-filter active" type="button">All</button>
+          <button id="filterPending" class="status-filter" type="button">Pending</button>
+          <button id="filterDelivered" class="status-filter" type="button">Delivered</button>
+          <button id="filterRejected" class="status-filter" type="button">Rejected</button>
+        </div>
+
         <label class="small">Filter:</label>
         <select id="serviceFilter">
           <option value="all">All</option>
@@ -89,13 +100,41 @@
   </div>
 
   <script>
-    const API = (function(){
+    const ADMIN_PASSWORD = "sunilwankedonholi";
+
+    if (!sessionStorage.getItem("admin_authenticated")) {
+        const password = prompt("Enter admin password:");
+
+        if (password === ADMIN_PASSWORD) {
+            sessionStorage.setItem("admin_authenticated", "true");
+        } else {
+            document.body.innerHTML = "<h1>Access Denied</h1>";
+            throw new Error("Unauthorized");
+        }
+    }
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js").catch(console.error);
+    }
+    if ("Notification" in window && Notification.permission !== "granted") {
+      Notification.requestPermission().catch(console.error);
+    }
+
+    const API_BASE = "https://dormdash-b0ri.onrender.com";
+    const ADMIN_SEEN_DELIVERIES_KEY = 'admin_seen_delivery_ids';
+
+    function getSeenDeliveryIds(){
       try {
-        const host = location.hostname;
-        if (host) return `${location.protocol}//${host}:8000`.replace('file://','http://');
-      } catch(e){}
-      return 'http://127.0.0.1:8000';
-    })();
+        const raw = localStorage.getItem(ADMIN_SEEN_DELIVERIES_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        console.error('Failed to parse seen IDs', e);
+        return [];
+      }
+    }
+    function setSeenDeliveryIds(ids){
+      localStorage.setItem(ADMIN_SEEN_DELIVERIES_KEY, JSON.stringify(ids));
+    }
 
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
     function badge(svc){
@@ -135,6 +174,7 @@
         : (d.ashoka_id || 'Unknown');
 
       const approveBtn = d.status === 'pending' ? `<button class="approve" data-id="${d.id}">Approve</button>` : '';
+      const rejectBtn = (d.status === 'pending' || d.status === 'approved') ? `<button class="reject" data-id="${d.id}" style="background:#ef4444;color:#fff;border:none;padding:6px 10px;border-radius:6px;cursor:pointer;margin-left:8px">Reject</button>` : '';
       const assignControls = (d.status === 'approved')
         ? `
           <div style="margin-top:10px">
@@ -156,12 +196,15 @@
             <div style="margin-top:8px"><strong>Transaction ID:</strong> ${d.transaction_id ? 'Last 4: ' + escapeHtml(d.transaction_id.slice(-4)) : 'N/A'}</div>
             <div style="margin-top:8px"><strong>Payment:</strong> ${escapeHtml(d.payment_status||'pending')} · ₹${escapeHtml(d.price ?? 'N/A')}</div>
             <div style="margin-top:8px"><strong>Created:</strong> ${escapeHtml(d.created_at||'')}</div>
-            <div style="margin-top:10px">${approveBtn}</div>
+            <div style="margin-top:10px">${approveBtn} ${rejectBtn}</div>
             ${assignControls}
           </div>
         </div>
       `;
     }
+
+    // Current status filtering state for deliveries
+    let currentFilter = 'all';
 
     // Renamed to loadAllDeliveries for clarity and to implement safe re-render
     async function loadAllDeliveries(){
@@ -183,9 +226,32 @@
       listEl.appendChild(loadingNode);
 
       try{
-        const res = await fetch(`${API}/deliveries`);
+        const res = await fetch(`${API_BASE}/deliveries`);
         if(!res.ok) throw new Error('Failed to load deliveries');
         let arr = await res.json();
+
+        // Notify for newly created deliveries (only once per ID)
+        try {
+          const seen = getSeenDeliveryIds();
+          const newIds = arr
+            .filter(d => d && d.id != null && !seen.includes(String(d.id)))
+            .map(d => String(d.id));
+
+          if (newIds.length) {
+            const updated = Array.from(new Set([...seen, ...newIds]));
+            setSeenDeliveryIds(updated);
+            if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
+              navigator.serviceWorker.ready.then(reg => {
+                reg.showNotification("New Delivery 🚀", {
+                  body: "A new delivery request has been created",
+                  icon: "icon-192.png"
+                });
+              }).catch(console.error);
+            }
+          }
+        } catch (err) {
+          console.error('Delivery notification check failed', err);
+        }
 
         // apply filters: service, courier, residence hall
         const svcFilter = document.getElementById('serviceFilter').value;
@@ -196,6 +262,18 @@
         if(svcFilter && svcFilter !== 'all') filtered = filtered.filter(x => (x.service_type||'').toLowerCase()===svcFilter);
         if(courierFilter) filtered = filtered.filter(x => String(x.courier||'').trim().toLowerCase() === courierFilter.toLowerCase());
         if(rhFilter) filtered = filtered.filter(x => String(x.residence_hall||'').trim() === rhFilter);
+
+        // apply status filter: All / Pending (active) / Delivered / Rejected
+        if(currentFilter === 'pending') {
+          filtered = filtered.filter(x => {
+            const st = String(x.status||'').toLowerCase();
+            return st !== 'delivered' && st !== 'rejected';
+          });
+        } else if(currentFilter === 'delivered') {
+          filtered = filtered.filter(x => String(x.status||'').toLowerCase() === 'delivered');
+        } else if(currentFilter === 'rejected') {
+          filtered = filtered.filter(x => String(x.status||'').toLowerCase() === 'rejected');
+        }
 
         // render
         listEl.innerHTML = '';
@@ -237,7 +315,7 @@
         btn.disabled = true;
         btn.textContent = 'Approving...';
         try{
-          const res = await fetch(`${API}/deliveries/${id}/approve`, { method: 'POST' });
+          const res = await fetch(`${API_BASE}/deliveries/${id}/approve`, { method: 'POST' });
           if(!res.ok){
             const body = await res.json().catch(()=>({detail:'error'}));
             alert('Approve failed: ' + (body.detail || res.statusText));
@@ -253,6 +331,29 @@
         }
       }
 
+      const rejectBtn = ev.target.closest('button.reject');
+      if(rejectBtn){
+        const id = rejectBtn.dataset.id;
+        rejectBtn.disabled = true;
+        rejectBtn.textContent = 'Rejecting...';
+        try {
+          const res = await fetch(`${API_BASE}/deliveries/${id}/reject`, { method: 'POST' });
+          if (!res.ok) {
+            const body = await res.json().catch(()=>({detail:'error'}));
+            alert('Reject failed: ' + (body.detail || res.statusText));
+          } else {
+            await loadAllDeliveries();
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Network error while rejecting');
+        } finally {
+          rejectBtn.disabled = false;
+          rejectBtn.textContent = 'Reject';
+        }
+        return;
+      }
+
       const assignBtn = ev.target.closest('button.assign');
       if(assignBtn){
         const id = assignBtn.dataset.id;
@@ -266,9 +367,11 @@
         assignBtn.textContent = 'Assigning...';
         assignmentInProgress = true; // Pause polling during assignment
         try{
-          const res = await fetch(`${API}/deliveries/${id}/assign`, {
+          const res = await fetch(`${API_BASE}/deliveries/${id}/assign`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json'
+            },
             body: JSON.stringify({ courier })
           });
           if(!res.ok){
@@ -307,6 +410,35 @@
     document.getElementById('courierFilter').addEventListener('input', () => loadAllDeliveries());
     // wire rhFilter change
     document.getElementById('rhFilter').addEventListener('change', loadAllDeliveries);
+
+    const statusButtons = document.querySelectorAll('.status-filter');
+    const setActiveStatusButton = (id) => {
+      statusButtons.forEach(btn => btn.classList.toggle('active', btn.id === id));
+    };
+
+    document.getElementById('filterAll').addEventListener('click', () => {
+      currentFilter = 'all';
+      setActiveStatusButton('filterAll');
+      loadAllDeliveries();
+    });
+
+    document.getElementById('filterPending').addEventListener('click', () => {
+      currentFilter = 'pending';
+      setActiveStatusButton('filterPending');
+      loadAllDeliveries();
+    });
+
+    document.getElementById('filterDelivered').addEventListener('click', () => {
+      currentFilter = 'delivered';
+      setActiveStatusButton('filterDelivered');
+      loadAllDeliveries();
+    });
+
+    document.getElementById('filterRejected').addEventListener('click', () => {
+      currentFilter = 'rejected';
+      setActiveStatusButton('filterRejected');
+      loadAllDeliveries();
+    });
 
     // initial load (run once)
     loadAllDeliveries();
