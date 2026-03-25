@@ -6,6 +6,9 @@ from typing import List, Optional
 from . import crud, models, schemas
 from .database import SessionLocal, engine
 
+# Import Delivery model for inline queries
+from .models import Delivery
+
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="DormDash API")
@@ -79,14 +82,13 @@ def assign_delivery(delivery_id: int, assign: schemas.DeliveryAccept, db: Sessio
 
 @app.post("/deliveries/{delivery_id}/reject", response_model=schemas.DeliveryResponse)
 def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
-    delivery = crud.reject_delivery(db, delivery_id)
-    if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
-    return delivery
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
 
-@app.post("/deliveries/{delivery_id}/reject", response_model=schemas.DeliveryResponse)
-def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
-    delivery = crud.reject_delivery(db, delivery_id)
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
+
+    delivery.status = "rejected"
+    db.commit()
+    db.refresh(delivery)
+
     return delivery
