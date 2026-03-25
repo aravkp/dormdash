@@ -4,11 +4,12 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 
 try:
-    from . import crud, models, schemas
+    from . import crud, models, notifications, schemas
     from .database import SessionLocal, engine
 except ImportError:
     import crud  # type: ignore
     import models  # type: ignore
+    import notifications  # type: ignore
     import schemas  # type: ignore
     from database import SessionLocal, engine  # type: ignore
 
@@ -33,7 +34,15 @@ def get_db():
 
 @app.post("/deliveries", response_model=schemas.DeliveryResponse)
 def create_delivery(delivery: schemas.DeliveryCreate, db: Session = Depends(get_db)):
-    return crud.create_delivery(db=db, delivery=delivery)
+    created = crud.create_delivery(db=db, delivery=delivery)
+    notifications.send_role_notification(
+        db=db,
+        role="admin",
+        title="New Delivery",
+        body=f"A new {created.service_type or 'delivery'} request has been created.",
+        url="/admin.html",
+    )
+    return created
 
 @app.get("/deliveries", response_model=List[schemas.DeliveryResponse])
 def list_deliveries(status: Optional[str] = Query(None, description="Filter by status: pending/approved/accepted/delivered"), db: Session = Depends(get_db)):
@@ -81,7 +90,15 @@ def approve_delivery(delivery_id: int, db: Session = Depends(get_db)):
 
 @app.post("/deliveries/{delivery_id}/assign", response_model=schemas.DeliveryResponse)
 def assign_delivery(delivery_id: int, assign: schemas.DeliveryAccept, db: Session = Depends(get_db)):
-    return crud.assign_delivery(db, delivery_id, assign.courier)
+    delivery = crud.assign_delivery(db, delivery_id, assign.courier)
+    notifications.send_role_notification(
+        db=db,
+        role=notifications.courier_role(assign.courier),
+        title="Pickup Ready",
+        body=f"You have been assigned delivery #{delivery.id}.",
+        url="/courier.html",
+    )
+    return delivery
 
 @app.post("/deliveries/{delivery_id}/reject", response_model=schemas.DeliveryResponse)
 def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
@@ -89,3 +106,44 @@ def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
     return delivery
+
+
+@app.get("/notifications/vapid-public-key", response_model=schemas.VapidPublicKeyResponse)
+def get_vapid_public_key():
+    return {"public_key": notifications.get_vapid_public_key()}
+
+
+@app.post("/notifications/admin/subscribe")
+def subscribe_admin_notifications(
+    subscription: schemas.PushSubscriptionCreate,
+    db: Session = Depends(get_db),
+):
+    if not notifications.vapid_is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications are not configured")
+    notifications.upsert_subscription(db, subscription, role="admin")
+    return {"ok": True}
+
+
+@app.post("/notifications/courier/{courier_id}/subscribe")
+def subscribe_courier_notifications(
+    courier_id: str,
+    subscription: schemas.PushSubscriptionCreate,
+    db: Session = Depends(get_db),
+):
+    if not notifications.vapid_is_configured():
+        raise HTTPException(status_code=503, detail="Push notifications are not configured")
+    notifications.upsert_subscription(
+        db,
+        subscription,
+        role=notifications.courier_role(courier_id),
+    )
+    return {"ok": True}
+
+
+@app.post("/notifications/unsubscribe")
+def unsubscribe_notifications(
+    subscription: schemas.PushSubscriptionCreate,
+    db: Session = Depends(get_db),
+):
+    notifications.remove_subscription_by_endpoint(db, subscription.endpoint)
+    return {"ok": True}

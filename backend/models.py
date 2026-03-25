@@ -50,3 +50,14 @@ class Delivery(Base):
     parent_delivery_id = Column(Integer, nullable=True)  # For pickup deliveries created from dropoff+pickup
 
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(String, unique=True, nullable=False, index=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    role = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

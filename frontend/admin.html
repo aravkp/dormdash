@@ -36,6 +36,13 @@
     .status-filter.active{background:#bfdbfe;color:#1d4ed8;border-color:#60a5fa}
     .small{font-size:12px;color:var(--muted)}
     .hidden{display:none}
+    .notification-banner{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .notification-copy{flex:1}
+    .notification-title{font-weight:700;margin-bottom:4px}
+    .notification-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .notification-status{font-size:12px;color:var(--muted)}
+    .secondary-btn{background:#111827;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .secondary-btn[disabled]{opacity:.6;cursor:not-allowed}
   </style>
   <link rel="manifest" href="manifest-admin.json">
   <meta name="theme-color" content="#14b8a6">
@@ -85,6 +92,17 @@
     </header>
 
     <div class="grid">
+      <section id="notificationBanner" class="panel notification-banner">
+        <div class="notification-copy">
+          <div class="notification-title">Admin Notifications</div>
+          <div id="notificationHelp" class="small">Install this page, open it from the home screen, then enable notifications.</div>
+        </div>
+        <div class="notification-actions">
+          <button id="enableNotificationsBtn" class="secondary-btn" type="button">Enable Notifications</button>
+          <div id="notificationStatus" class="notification-status">Checking notification support...</div>
+        </div>
+      </section>
+
       <section class="panel">
         <h2 class="section-title">Deliveries</h2>
         <div id="deliveriesList" class="list"></div>
@@ -113,28 +131,128 @@
         }
     }
 
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("service-worker.js").catch(console.error);
-    }
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission().catch(console.error);
-    }
-
     const API_BASE = "https://dormdash-b0ri.onrender.com";
-    const ADMIN_SEEN_DELIVERIES_KEY = 'admin_seen_delivery_ids';
+    const IOS_INSTALL_HINT = 'On iPhone, install the Admin page to the Home Screen and then tap Enable Notifications.';
 
-    function getSeenDeliveryIds(){
-      try {
-        const raw = localStorage.getItem(ADMIN_SEEN_DELIVERIES_KEY);
-        return raw ? JSON.parse(raw) : [];
-      } catch (e) {
-        console.error('Failed to parse seen IDs', e);
-        return [];
+    const enableNotificationsBtn = document.getElementById('enableNotificationsBtn');
+    const notificationStatusEl = document.getElementById('notificationStatus');
+    const notificationHelpEl = document.getElementById('notificationHelp');
+    const notificationBannerEl = document.getElementById('notificationBanner');
+
+    let swRegistrationPromise = null;
+
+    function isIos() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+    }
+
+    function isStandaloneApp() {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    async function ensureServiceWorkerRegistration() {
+      if (!('serviceWorker' in navigator)) return null;
+      if (swRegistrationPromise) return swRegistrationPromise;
+
+      swRegistrationPromise = navigator.serviceWorker
+        .register('service-worker.js')
+        .then(async (reg) => {
+          await navigator.serviceWorker.ready;
+          return reg;
+        })
+        .catch((err) => {
+          console.error('Service worker registration failed', err);
+          return null;
+        });
+
+      return swRegistrationPromise;
+    }
+
+    function updateNotificationUI() {
+      if (!('Notification' in window)) {
+        notificationStatusEl.textContent = 'Notifications are not supported on this device/browser.';
+        enableNotificationsBtn.disabled = true;
+        return;
+      }
+
+      if (Notification.permission === 'granted') {
+        notificationStatusEl.textContent = 'Notifications are enabled.';
+        enableNotificationsBtn.disabled = true;
+      } else if (Notification.permission === 'denied') {
+        notificationStatusEl.textContent = 'Notifications are blocked in browser settings.';
+        enableNotificationsBtn.disabled = true;
+      } else {
+        notificationStatusEl.textContent = isIos() && !isStandaloneApp()
+          ? 'Install this app to the Home Screen before enabling notifications.'
+          : 'Notifications are off.';
+        enableNotificationsBtn.disabled = isIos() && !isStandaloneApp();
+      }
+
+      if (isIos()) {
+        notificationHelpEl.textContent = IOS_INSTALL_HINT;
       }
     }
-    function setSeenDeliveryIds(ids){
-      localStorage.setItem(ADMIN_SEEN_DELIVERIES_KEY, JSON.stringify(ids));
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
     }
+
+    async function subscribeToAdminPush() {
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg) throw new Error('Service worker unavailable');
+
+      const keyRes = await fetch(`${API_BASE}/notifications/vapid-public-key`);
+      if (!keyRes.ok) throw new Error('Push configuration is unavailable');
+      const { public_key: publicKey } = await keyRes.json();
+      if (!publicKey) throw new Error('Missing VAPID public key');
+
+      let subscription = await reg.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
+
+      const saveRes = await fetch(`${API_BASE}/notifications/admin/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+      if (!saveRes.ok) {
+        const body = await saveRes.json().catch(() => ({}));
+        throw new Error(body.detail || 'Could not save push subscription');
+      }
+    }
+
+    async function enableNotifications() {
+      if (!('Notification' in window)) {
+        updateNotificationUI();
+        return;
+      }
+
+      if (isIos() && !isStandaloneApp()) {
+        notificationStatusEl.textContent = 'Install the app first, then reopen it from the Home Screen.';
+        return;
+      }
+
+      try {
+        await ensureServiceWorkerRegistration();
+        const permission = await Notification.requestPermission();
+        updateNotificationUI();
+        if (permission === 'granted') {
+          await subscribeToAdminPush();
+          notificationStatusEl.textContent = 'Notifications are enabled.';
+        }
+      } catch (err) {
+        console.error('Notification permission request failed', err);
+        notificationStatusEl.textContent = err?.message || 'Could not enable notifications.';
+      }
+    }
+
+    enableNotificationsBtn.addEventListener('click', enableNotifications);
 
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
     function badge(svc){
@@ -229,29 +347,6 @@
         const res = await fetch(`${API_BASE}/deliveries`);
         if(!res.ok) throw new Error('Failed to load deliveries');
         let arr = await res.json();
-
-        // Notify for newly created deliveries (only once per ID)
-        try {
-          const seen = getSeenDeliveryIds();
-          const newIds = arr
-            .filter(d => d && d.id != null && !seen.includes(String(d.id)))
-            .map(d => String(d.id));
-
-          if (newIds.length) {
-            const updated = Array.from(new Set([...seen, ...newIds]));
-            setSeenDeliveryIds(updated);
-            if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
-              navigator.serviceWorker.ready.then(reg => {
-                reg.showNotification("New Delivery 🚀", {
-                  body: "A new delivery request has been created",
-                  icon: "icon-192.png"
-                });
-              }).catch(console.error);
-            }
-          }
-        } catch (err) {
-          console.error('Delivery notification check failed', err);
-        }
 
         // apply filters: service, courier, residence hall
         const svcFilter = document.getElementById('serviceFilter').value;
@@ -440,6 +535,9 @@
       loadAllDeliveries();
     });
 
+    ensureServiceWorkerRegistration().finally(updateNotificationUI);
+    updateNotificationUI();
+
     // initial load (run once)
     loadAllDeliveries();
 
@@ -460,4 +558,3 @@
   </script>
 </body>
 </html>
-

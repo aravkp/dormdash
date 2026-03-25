@@ -47,3 +47,17 @@ class DeliveryResponse(DeliveryBase):
 
 class DeliveryAccept(BaseModel):
     courier: str
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+
+
+class VapidPublicKeyResponse(BaseModel):
+    public_key: Optional[str] = None

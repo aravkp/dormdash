@@ -36,6 +36,13 @@
     .complete{background:#2563eb;color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer}
     .small{font-size:12px;color:var(--muted)}
     .hidden{display:none}
+    .notification-banner{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:12px}
+    .notification-copy{flex:1}
+    .notification-title{font-weight:700;margin-bottom:4px}
+    .notification-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .notification-status{font-size:12px;color:var(--muted)}
+    .secondary-btn{background:#111827;color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    .secondary-btn[disabled]{opacity:.6;cursor:not-allowed}
     @media (max-width:980px){ .wrap{grid-template-columns:1fr; } }
   </style>
   <link rel="manifest" href="manifest-courier.json">
@@ -54,6 +61,17 @@
 
   <!-- Dashboard (hidden until login) -->
   <div id="dashboard" style="display:none;">
+    <section id="notificationBanner" class="panel notification-banner" style="max-width:1100px;margin:0 auto 20px;">
+      <div class="notification-copy">
+        <div class="notification-title">Courier Notifications</div>
+        <div id="notificationHelp" class="small">Install this page, open it from the home screen, then enable notifications.</div>
+      </div>
+      <div class="notification-actions">
+        <button id="enableNotificationsBtn" class="secondary-btn" type="button">Enable Notifications</button>
+        <div id="notificationStatus" class="notification-status">Checking notification support...</div>
+      </div>
+    </section>
+
     <div class="wrap">
       <header>
         <div>
@@ -84,14 +102,7 @@
 
   <script>
     const API_BASE = "https://dormdash-b0ri.onrender.com";
-    const COURIER_APPROVED_IDS_KEY = 'courier_approved_notified_ids';
-
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("service-worker.js").catch(console.error);
-    }
-    if ("Notification" in window && Notification.permission !== "granted") {
-      Notification.requestPermission().catch(console.error);
-    }
+    const IOS_INSTALL_HINT = 'On iPhone, install the Courier page to the Home Screen and then tap Enable Notifications.';
 
     // UI elements & state
     let courierId = null;
@@ -101,19 +112,126 @@
     const startBtn = document.getElementById('startBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const courierLabel = document.getElementById('courierLabel');
+    const enableNotificationsBtn = document.getElementById('enableNotificationsBtn');
+    const notificationStatusEl = document.getElementById('notificationStatus');
+    const notificationHelpEl = document.getElementById('notificationHelp');
 
-    function getApprovedIds(){
-      try {
-        const raw = localStorage.getItem(COURIER_APPROVED_IDS_KEY);
-        return raw ? JSON.parse(raw) : [];
-      } catch (e) {
-        console.error('Failed to parse approved IDs', e);
-        return [];
+    let swRegistrationPromise = null;
+
+    function isIos() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+    }
+
+    function isStandaloneApp() {
+      return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    }
+
+    async function ensureServiceWorkerRegistration() {
+      if (!('serviceWorker' in navigator)) return null;
+      if (swRegistrationPromise) return swRegistrationPromise;
+
+      swRegistrationPromise = navigator.serviceWorker
+        .register('service-worker.js')
+        .then(async (reg) => {
+          await navigator.serviceWorker.ready;
+          return reg;
+        })
+        .catch((err) => {
+          console.error('Service worker registration failed', err);
+          return null;
+        });
+
+      return swRegistrationPromise;
+    }
+
+    function updateNotificationUI() {
+      if (!('Notification' in window)) {
+        notificationStatusEl.textContent = 'Notifications are not supported on this device/browser.';
+        enableNotificationsBtn.disabled = true;
+        return;
+      }
+
+      if (Notification.permission === 'granted') {
+        notificationStatusEl.textContent = 'Notifications are enabled.';
+        enableNotificationsBtn.disabled = true;
+      } else if (Notification.permission === 'denied') {
+        notificationStatusEl.textContent = 'Notifications are blocked in browser settings.';
+        enableNotificationsBtn.disabled = true;
+      } else {
+        notificationStatusEl.textContent = isIos() && !isStandaloneApp()
+          ? 'Install this app to the Home Screen before enabling notifications.'
+          : 'Notifications are off.';
+        enableNotificationsBtn.disabled = isIos() && !isStandaloneApp();
+      }
+
+      if (isIos()) {
+        notificationHelpEl.textContent = IOS_INSTALL_HINT;
       }
     }
-    function setApprovedIds(ids){
-      localStorage.setItem(COURIER_APPROVED_IDS_KEY, JSON.stringify(ids));
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const rawData = atob(base64);
+      return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
     }
+
+    async function subscribeToCourierPush() {
+      if (!courierId) throw new Error('Log in as a courier first');
+
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg) throw new Error('Service worker unavailable');
+
+      const keyRes = await fetch(`${API_BASE}/notifications/vapid-public-key`);
+      if (!keyRes.ok) throw new Error('Push configuration is unavailable');
+      const { public_key: publicKey } = await keyRes.json();
+      if (!publicKey) throw new Error('Missing VAPID public key');
+
+      let subscription = await reg.pushManager.getSubscription();
+      if (!subscription) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey)
+        });
+      }
+
+      const saveRes = await fetch(`${API_BASE}/notifications/courier/${encodeURIComponent(courierId)}/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subscription)
+      });
+      if (!saveRes.ok) {
+        const body = await saveRes.json().catch(() => ({}));
+        throw new Error(body.detail || 'Could not save push subscription');
+      }
+    }
+
+    async function enableNotifications() {
+      if (!('Notification' in window)) {
+        updateNotificationUI();
+        return;
+      }
+
+      if (isIos() && !isStandaloneApp()) {
+        notificationStatusEl.textContent = 'Install the app first, then reopen it from the Home Screen.';
+        return;
+      }
+
+      try {
+        await ensureServiceWorkerRegistration();
+        const permission = await Notification.requestPermission();
+        updateNotificationUI();
+        if (permission === 'granted') {
+          await subscribeToCourierPush();
+          notificationStatusEl.textContent = 'Notifications are enabled.';
+        }
+      } catch (err) {
+        console.error('Notification permission request failed', err);
+        notificationStatusEl.textContent = err?.message || 'Could not enable notifications.';
+      }
+    }
+
+    enableNotificationsBtn.addEventListener('click', enableNotifications);
 
     // Rendering helpers
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
@@ -218,29 +336,6 @@
         if(!res.ok) throw new Error('Failed to load my deliveries');
         const list = await res.json();
 
-        // Notify about newly approved deliveries for this courier
-        try {
-          const approvedIds = getApprovedIds();
-          const newlyApproved = list
-            .filter(d => String((d.status||'').toLowerCase()) === 'approved' && !approvedIds.includes(String(d.id)))
-            .map(d => String(d.id));
-
-          if (newlyApproved.length) {
-            const updated = Array.from(new Set([...approvedIds, ...newlyApproved]));
-            setApprovedIds(updated);
-            if ("serviceWorker" in navigator && navigator.serviceWorker.ready) {
-              navigator.serviceWorker.ready.then(reg => {
-                reg.showNotification("Pickup Ready 📦", {
-                  body: "A delivery is ready for pickup",
-                  icon: "icon-192.png"
-                });
-              }).catch(console.error);
-            }
-          }
-        } catch (err) {
-          console.error('Courier approval notification check failed', err);
-        }
-
         if(!Array.isArray(list) || list.length===0){ container.innerHTML = '<div class="small">No assigned deliveries</div>'; return; }
         container.innerHTML = list.map(d => renderMyCard(d)).join('');
       } catch(e){
@@ -319,6 +414,12 @@
       courierLabel.textContent = courierId;
       loginSection.style.display = 'none';
       dashboard.style.display = 'block';
+      if (Notification.permission === 'granted') {
+        subscribeToCourierPush().catch((err) => {
+          console.error('Courier push subscription failed', err);
+          notificationStatusEl.textContent = err?.message || 'Could not enable notifications.';
+        });
+      }
     }
 
     startBtn.addEventListener('click', () => {
@@ -339,6 +440,8 @@
 
     // Auto-login and auto-refresh
     window.onload = () => {
+      ensureServiceWorkerRegistration().finally(updateNotificationUI);
+      updateNotificationUI();
       const saved = localStorage.getItem('courier_id');
       if(saved){
         setLoggedIn(saved);
