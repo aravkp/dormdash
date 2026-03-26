@@ -141,7 +141,14 @@ def send_notification(
             notification=messaging.Notification(title=title, body=body),
             token=token,
             webpush=messaging.WebpushConfig(
-                fcm_options=messaging.WebpushFCMOptions(link=url)
+                headers={"Urgency": "high"},
+                notification=messaging.WebpushNotification(
+                    title=title,
+                    body=body,
+                    icon="/icon-512.png",
+                    badge="/icon-512.png",
+                ),
+                fcm_options=messaging.WebpushFCMOptions(link=url),
             ),
         )
         try:

@@ -578,7 +578,8 @@
 
     swRegistrationPromise = (async () => {
       try {
-        const reg = await navigator.serviceWorker.register('service-worker.js');
+        const reg = await navigator.serviceWorker.register('/service-worker.js');
+        
         await navigator.serviceWorker.ready;
         return reg;
       } catch (e) {

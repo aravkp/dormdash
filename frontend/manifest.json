@@ -1,6 +1,7 @@
 {
   "name": "DormDash",
   "short_name": "DormDash",
+  "id": "/customer.html",
   "start_url": "/customer.html",
   "scope": "/",
   "display": "standalone",

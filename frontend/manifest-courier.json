@@ -1,7 +1,9 @@
 {
   "name": "DormDash Courier",
   "short_name": "Courier",
+  "id": "/courier.html",
   "start_url": "/courier.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#14b8a6",

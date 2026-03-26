@@ -142,7 +142,7 @@
       if (swRegistrationPromise) return swRegistrationPromise;
 
       swRegistrationPromise = navigator.serviceWorker
-        .register('service-worker.js')
+        .register('/service-worker.js')
         .then(async (reg) => {
           await navigator.serviceWorker.ready;
           return reg;

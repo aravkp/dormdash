@@ -1,7 +1,9 @@
 {
   "name": "DormDash Admin",
   "short_name": "Admin",
+  "id": "/admin.html",
   "start_url": "/admin.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#14b8a6",
