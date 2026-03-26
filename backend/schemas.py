@@ -61,3 +61,11 @@ class PushSubscriptionCreate(BaseModel):
 
 class VapidPublicKeyResponse(BaseModel):
     public_key: Optional[str] = None
+
+
+class NotificationTokenCreate(BaseModel):
+    token: str
+
+
+class FirebaseWebPushKeyResponse(BaseModel):
+    web_push_key: Optional[str] = None

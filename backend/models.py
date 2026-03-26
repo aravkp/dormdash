@@ -61,3 +61,13 @@ class PushSubscription(Base):
     auth = Column(String, nullable=False)
     role = Column(String, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class NotificationDeviceToken(Base):
+    __tablename__ = "notification_device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    role = Column(String, nullable=False, index=True)
+    courier_id = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -100,6 +100,8 @@
     </div>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"></script>
   <script>
     const API_BASE = "https://dormdash-b0ri.onrender.com";
     const IOS_INSTALL_HINT = 'On iPhone, install the Courier page to the Home Screen and then tap Enable Notifications.';
@@ -115,6 +117,15 @@
     const enableNotificationsBtn = document.getElementById('enableNotificationsBtn');
     const notificationStatusEl = document.getElementById('notificationStatus');
     const notificationHelpEl = document.getElementById('notificationHelp');
+    const firebaseApp = firebase.initializeApp({
+      apiKey: "AIzaSyCmHbirJJE7d8_wvMhvEUDknBfSdTqwPK0",
+      authDomain: "dormdash-38623.firebaseapp.com",
+      projectId: "dormdash-38623",
+      storageBucket: "dormdash-38623.firebasestorage.app",
+      messagingSenderId: "927323489495",
+      appId: "1:927323489495:web:0f9a2163ab45b25f509c92"
+    }, 'courier-app');
+    const firebaseMessaging = firebase.messaging(firebaseApp);
 
     let swRegistrationPromise = null;
 
@@ -169,40 +180,31 @@
       }
     }
 
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const rawData = atob(base64);
-      return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-    }
-
-    async function subscribeToCourierPush() {
+    async function registerCourierToken() {
       if (!courierId) throw new Error('Log in as a courier first');
 
       const reg = await ensureServiceWorkerRegistration();
       if (!reg) throw new Error('Service worker unavailable');
 
-      const keyRes = await fetch(`${API_BASE}/notifications/vapid-public-key`);
-      if (!keyRes.ok) throw new Error('Push configuration is unavailable');
-      const { public_key: publicKey } = await keyRes.json();
-      if (!publicKey) throw new Error('Missing VAPID public key');
+      const keyRes = await fetch(`${API_BASE}/notifications/firebase-web-push-key`);
+      if (!keyRes.ok) throw new Error('Firebase web push key is unavailable');
+      const { web_push_key: webPushKey } = await keyRes.json();
+      if (!webPushKey) throw new Error('Missing Firebase web push key');
 
-      let subscription = await reg.pushManager.getSubscription();
-      if (!subscription) {
-        subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
-      }
+      const token = await firebaseMessaging.getToken({
+        vapidKey: webPushKey,
+        serviceWorkerRegistration: reg,
+      });
+      if (!token) throw new Error('Could not get Firebase messaging token');
 
-      const saveRes = await fetch(`${API_BASE}/notifications/courier/${encodeURIComponent(courierId)}/subscribe`, {
+      const saveRes = await fetch(`${API_BASE}/notifications/courier/${encodeURIComponent(courierId)}/register-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription)
+        body: JSON.stringify({ token })
       });
       if (!saveRes.ok) {
         const body = await saveRes.json().catch(() => ({}));
-        throw new Error(body.detail || 'Could not save push subscription');
+        throw new Error(body.detail || 'Could not save Firebase token');
       }
     }
 
@@ -222,7 +224,7 @@
         const permission = await Notification.requestPermission();
         updateNotificationUI();
         if (permission === 'granted') {
-          await subscribeToCourierPush();
+          await registerCourierToken();
           notificationStatusEl.textContent = 'Notifications are enabled.';
         }
       } catch (err) {
@@ -233,10 +235,28 @@
 
     enableNotificationsBtn.addEventListener('click', enableNotifications);
 
+    firebaseMessaging.onMessage(async (payload) => {
+      if (Notification.permission !== 'granted') return;
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg) return;
+      await reg.showNotification(payload.notification?.title || 'DormDash', {
+        body: payload.notification?.body || '',
+        icon: 'icon-512.png',
+        badge: 'icon-512.png',
+        data: {
+          url: payload.fcmOptions?.link || '/courier.html'
+        }
+      });
+    });
+
     // Rendering helpers
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function formatLocation(value){
+      const raw = String(value || '').trim();
+      return raw.startsWith('AC-') ? raw : `RH ${raw || 'N/A'}`;
+    }
     function badgeHtml(svc){
-      const map = { Mail:['Mail','mail'], Laundry:['Laundry','laundry'], 'Gate Pickup':['Gate','gate'], 'Tuck Shop':['Tuck Shop','tuckshop'], 'Within-Residence-Hall':['Within RH','gate'] };
+      const map = { Mail:['Mail','mail'], Laundry:['Laundry','laundry'], 'Gate Pickup':['Gate','gate'], 'Tuck Shop':['Tuck Shop','tuckshop'], 'FuelZone Delivery':['FuelZone','tuckshop'], 'Blue Tokai Delivery':['Blue Tokai','tuckshop'], 'Within-Residence-Hall':['Within RH','gate'] };
       const entry = map[svc] || ['Unknown','mail'];
       return `<span class="badge ${entry[1]}">${entry[0]}</span>`;
     }
@@ -262,6 +282,8 @@
         return out;
       }
       if(svc==='Tuck Shop') return `<div class="service-details">Tuck Shop Order<br><strong>Location:</strong> ${escapeHtml(d.tuck_shop_location||'N/A')}<br><strong>Items:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='FuelZone Delivery') return `<div class="service-details">FuelZone Delivery<br><strong>Order:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='Blue Tokai Delivery') return `<div class="service-details">Blue Tokai Delivery<br><strong>Order:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
       if(svc==='Within-Residence-Hall') return `<div class="service-details">Within-Residence-Hall<br><strong>Food Place:</strong> ${escapeHtml(d.order_from||'N/A')}</div>`;
       return `<div class="service-details">${escapeHtml(svc)}</div>`;
     }
@@ -275,7 +297,7 @@
         <div class="card" data-id="${d.id}">
           <div class="card-left">
             <div class="name">${nameEsc} ${badgeHtml(d.service_type)}</div>
-            <div class="meta">RH ${hall} · Room ${room} · <span class="small">#${d.id}</span></div>
+            <div class="meta">${escapeHtml(formatLocation(d.residence_hall))} · Room ${room} · <span class="small">#${d.id}</span></div>
             <div class="meta">Phone ${escapeHtml(d.phone_number || 'N/A')}</div>
             ${serviceDetailsHtml(d)}
           </div>
@@ -296,7 +318,7 @@
         <div class="card" data-id="${d.id}">
           <div class="card-left">
             <div class="name">${nameEsc} ${badgeHtml(d.service_type)}</div>
-            <div class="meta">RH ${hall} · Room ${room} · <span class="small">#${d.id} · ${escapeHtml(d.status||'')}</span></div>
+            <div class="meta">${escapeHtml(formatLocation(d.residence_hall))} · Room ${room} · <span class="small">#${d.id} · ${escapeHtml(d.status||'')}</span></div>
             <div class="meta">Phone ${escapeHtml(d.phone_number || 'N/A')}</div>
             ${serviceDetailsHtml(d)}
           </div>
@@ -415,7 +437,7 @@
       loginSection.style.display = 'none';
       dashboard.style.display = 'block';
       if (Notification.permission === 'granted') {
-        subscribeToCourierPush().catch((err) => {
+        registerCourierToken().catch((err) => {
           console.error('Courier push subscription failed', err);
           notificationStatusEl.textContent = err?.message || 'Could not enable notifications.';
         });

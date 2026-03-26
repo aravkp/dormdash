@@ -10,6 +10,109 @@ except ImportError:
     import models  # type: ignore
     from schemas import DeliveryCreate  # type: ignore
 
+
+def calculate_delivery_price(delivery: DeliveryCreate) -> int:
+    service = (delivery.service_type or "").strip()
+    location = (delivery.residence_hall or "").strip()
+    ac_to_rh = {
+        "AC-01": 1,
+        "AC-02": 2,
+        "AC-03": 3,
+        "AC-04": 4,
+        "AC-05": 6,
+    }
+    ac_surcharge = 10 if location in ac_to_rh else 0
+    rh = ac_to_rh.get(location)
+    if rh is None:
+        try:
+            rh = int(location or 0)
+        except ValueError:
+            rh = 0
+
+    if service == "Mail":
+        if rh == 3:
+            return 50 + ac_surcharge
+        if rh in {1, 2, 4, 5}:
+            return 75 + ac_surcharge
+        if rh in {6, 7}:
+            return 100 + ac_surcharge
+        return 0
+
+    if service == "Laundry":
+        laundry_type = (delivery.laundry_type or "").strip().lower()
+        if laundry_type == "dropoff+pickup":
+            if rh in {5, 6, 7}:
+                return 85 + ac_surcharge
+            if rh in {3, 4}:
+                return 125 + ac_surcharge
+            if rh in {1, 2}:
+                return 175 + ac_surcharge
+            return 0
+        if rh in {5, 6, 7}:
+            return 50 + ac_surcharge
+        if rh in {3, 4}:
+            return 75 + ac_surcharge
+        if rh in {1, 2}:
+            return 100 + ac_surcharge
+        return 0
+
+    if service == "Gate Pickup":
+        gate = (delivery.gate_number or "").strip()
+        if gate == "1":
+            if rh in {1, 2}:
+                return 50 + ac_surcharge
+            if rh == 3:
+                return 75 + ac_surcharge
+            if rh in {4, 5, 6, 7}:
+                return 100 + ac_surcharge
+        if gate == "2":
+            if rh in {1, 2}:
+                return 100 + ac_surcharge
+            if rh == 3:
+                return 75 + ac_surcharge
+            if rh in {4, 5, 6, 7}:
+                return 50 + ac_surcharge
+        return 0
+
+    if service == "Tuck Shop":
+        tuck_shop_location = (delivery.tuck_shop_location or "").strip().lower()
+        if tuck_shop_location == "tuck shop mess":
+            if rh in {1, 2}:
+                return 50 + ac_surcharge
+            if rh == 3:
+                return 75 + ac_surcharge
+            if rh in {4, 5, 6, 7}:
+                return 100 + ac_surcharge
+        if tuck_shop_location == "tuck shop rh5":
+            if rh in {1, 2}:
+                return 100 + ac_surcharge
+            if rh == 3:
+                return 75 + ac_surcharge
+            if rh in {4, 5, 6, 7}:
+                return 50 + ac_surcharge
+        return 0
+
+    if service == "FuelZone Delivery":
+        if rh in {1, 2}:
+            return 50 + ac_surcharge
+        if rh == 3:
+            return 75 + ac_surcharge
+        if rh in {4, 5, 6, 7}:
+            return 100 + ac_surcharge
+        return 0
+
+    if service == "Blue Tokai Delivery":
+        if rh in {1, 2, 6, 7}:
+            return 100 + ac_surcharge
+        if rh in {4, 5}:
+            return 75 + ac_surcharge
+        return 0
+
+    if service == "Within-Residence-Hall":
+        return 25 + ac_surcharge
+
+    return 0
+
 def create_delivery(db: Session, delivery: DeliveryCreate) -> models.Delivery:
     svc = (delivery.service_type or "").lower()
     phone = (delivery.phone_number or "").strip()
@@ -72,9 +175,26 @@ def create_delivery(db: Session, delivery: DeliveryCreate) -> models.Delivery:
             raise HTTPException(status_code=400, detail="items_requested is required for Tuck Shop")
         if not delivery.tuck_shop_location:
             raise HTTPException(status_code=400, detail="tuck_shop_location is required for Tuck Shop")
+    if svc == "fuelzone delivery":
+        if not delivery.items_requested:
+            raise HTTPException(status_code=400, detail="items_requested is required for FuelZone Delivery")
+    if svc == "blue tokai delivery":
+        if not delivery.items_requested:
+            raise HTTPException(status_code=400, detail="items_requested is required for Blue Tokai Delivery")
     if svc == "within-residence-hall" or svc == "within residence hall":
         if not delivery.order_from:
             raise HTTPException(status_code=400, detail="order_from is required for Within-Residence-Hall")
+
+    expected_price = calculate_delivery_price(delivery)
+    if expected_price <= 0:
+        raise HTTPException(status_code=400, detail="price could not be calculated for this delivery")
+    if delivery.price is None:
+        raise HTTPException(status_code=400, detail=f"price is required and must equal {expected_price}")
+    if delivery.price != expected_price:
+        raise HTTPException(
+            status_code=400,
+            detail=f"price mismatch: expected {expected_price}, received {delivery.price}",
+        )
 
     db_obj = models.Delivery(
         # include name
@@ -100,7 +220,7 @@ def create_delivery(db: Session, delivery: DeliveryCreate) -> models.Delivery:
         order_from=delivery.order_from,
         transaction_id=delivery.transaction_id,
         payment_status=delivery.payment_status or "pending",
-        price=delivery.price,
+        price=expected_price,
         status="pending",
         parent_delivery_id=None
     )

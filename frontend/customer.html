@@ -165,12 +165,24 @@
           <option value="Laundry">Laundry</option>
           <option value="Gate Pickup">Gate Pickup</option>
           <option value="Tuck Shop">Tuck Shop</option>
+          <option value="FuelZone Delivery">FuelZone Delivery</option>
+          <option value="Blue Tokai Delivery">Blue Tokai Delivery</option>
+          <option value="Special Request">Special Request</option>
           <option value="Within-Residence-Hall">Within-Residence-Hall</option>
         </select>
       </div>
 
+      <div id="standardBookingFields">
       <div class="form-row">
-        <label for="residence_hall">Residence Hall</label>
+        <label for="destination_type">Destination Type</label>
+        <select id="destination_type" name="destination_type" required>
+          <option value="rh">Residence Hall</option>
+          <option value="ac">Academic Building</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label for="residence_hall" id="locationLabel">Residence Hall</label>
         <select id="residence_hall" name="residence_hall" required>
           <option value="">Select Residence Hall</option>
           <option value="1">RH1</option>
@@ -334,6 +346,13 @@
         </div>
       </div>
 
+      <div id="order_fields" class="hidden">
+        <div class="form-row" style="align-items:flex-start;">
+          <label for="order_items_requested">Order Details</label>
+          <textarea id="order_items_requested" placeholder="List items or order details"></textarea>
+        </div>
+      </div>
+
       <div id="within_rh_fields" class="hidden">
         <div class="form-row">
           <label for="order_from">Food Place</label>
@@ -375,10 +394,19 @@
       <div style="margin-top:12px">
         <button type="submit" id="submitBtn" style="background:#14b8a6;color:#fff;border:none;padding:10px 14px;border-radius:8px;cursor:pointer">Submit request</button>
       </div>
+      </div>
+
+      <div id="specialRequestNotice" class="hidden" style="margin-top:16px;border-radius:10px;border:1px solid #e5e7eb;background:#fafafa;padding:16px">
+        <div style="font-weight:700;font-size:18px;margin-bottom:8px">Special Request</div>
+        <div style="color:#4b5563;margin-bottom:8px">Contact this head of logistics:</div>
+        <div style="font-size:22px;font-weight:700">+91 97552 19571</div>
+      </div>
     </form>
   </div>
 
   <script>
+
+
   const API_BASE = "https://dormdash-b0ri.onrender.com";
   const TRACKED_DELIVERY_IDS_KEY = "tracked_delivery_ids";
 
@@ -457,10 +485,11 @@
     const statusText = statusLabel(delivery.status);
     const serviceType = delivery.service_type || 'Unknown';
     const residenceHall = delivery.residence_hall || 'N/A';
+    const locationLabel = String(residenceHall).startsWith('AC-') ? residenceHall : `RH ${residenceHall}`;
     const roomNumber = delivery.room_number || 'N/A';
     const createdAt = delivery.created_at ? new Date(delivery.created_at).toLocaleString() : 'N/A';
 
-    let details = `RH ${residenceHall} · Room ${roomNumber}<br>Created: ${createdAt}`;
+    let details = `${locationLabel} · Room ${roomNumber}<br>Created: ${createdAt}`;
 
     // Add service-specific details
     if (serviceType === 'Mail') {
@@ -479,6 +508,8 @@
       details += `<br>Gate: ${delivery.gate_number || 'N/A'} · Package: ${delivery.package_type || 'N/A'}`;
     } else if (serviceType === 'Tuck Shop') {
       details += `<br>Location: ${delivery.tuck_shop_location || 'N/A'} · Items: ${delivery.items_requested || 'N/A'}`;
+    } else if (serviceType === 'FuelZone Delivery' || serviceType === 'Blue Tokai Delivery') {
+      details += `<br>Order: ${delivery.items_requested || 'N/A'}`;
     } else if (serviceType === 'Within-Residence-Hall') {
       details += `<br>Food Place: ${delivery.order_from || 'N/A'}`;
     }
@@ -636,8 +667,8 @@
       }
       await reg.showNotification(title, {
         body: body,
-        icon: 'icon-192.png',
-        badge: 'icon-192.png',
+        icon: 'icon-512.png',
+        badge: 'icon-512.png',
         tag: 'dormdash-delivery-update',
         renotify: true
       });
@@ -704,6 +735,10 @@
     }
 
     const service = document.getElementById('service_type').value;
+    if (service === 'Special Request') {
+      alert('Use the contact shown below for Special Request deliveries.');
+      return;
+    }
     const rh = document.getElementById('residence_hall').value;
     const txn = (document.getElementById('transaction_id').value || '').trim();
     const phone = digitsOnly(inputValueOrNull('phone_number'));
@@ -793,6 +828,11 @@
       }
     }
 
+    if ((service === 'FuelZone Delivery' || service === 'Blue Tokai Delivery') && !inputValueOrNull('order_items_requested')) {
+      alert(`Enter order details for ${service}`);
+      return;
+    }
+
     if (service === 'Within-Residence-Hall' && !inputValueOrNull('order_from')) {
       alert('Enter the food place for Within-Residence-Hall service');
       return;
@@ -846,7 +886,7 @@
       gate_number: inputValueOrNull('gate_number'),
       package_type: inputValueOrNull('package_type'),
       additional_details: inputValueOrNull('additional_details'),
-      items_requested: inputValueOrNull('items_requested'),
+      items_requested: service === 'Tuck Shop' ? inputValueOrNull('items_requested') : inputValueOrNull('order_items_requested'),
       tuck_shop_location: inputValueOrNull('tuck_shop_location'),
       order_from: inputValueOrNull('order_from'),
       transaction_id: txn,
@@ -920,13 +960,18 @@
 
     // Dynamic field logic
     const serviceSelect = document.getElementById('service_type');
+    const destinationTypeSelect = document.getElementById('destination_type');
     const residenceSelect = document.getElementById('residence_hall');
+    const locationLabelEl = document.getElementById('locationLabel');
     const priceDisplayEl = document.getElementById('priceDisplay');
+    const standardBookingFields = document.getElementById('standardBookingFields');
+    const specialRequestNotice = document.getElementById('specialRequestNotice');
 
     const mailFields = document.getElementById('mail_fields');
     const laundryFields = document.getElementById('laundry_fields');
     const gateFields = document.getElementById('gate_fields');
     const tuckFields = document.getElementById('tuck_fields');
+    const orderFields = document.getElementById('order_fields');
     const withinRhFields = document.getElementById('within_rh_fields');
     const laundryTypeSelect = document.getElementById('laundry_type');
     const laundryDropFields = document.getElementById('laundry_drop_fields');
@@ -938,10 +983,52 @@
       if(laundryFields) laundryFields.classList.add('hidden');
       if(gateFields) gateFields.classList.add('hidden');
       if(tuckFields) tuckFields.classList.add('hidden');
+      if(orderFields) orderFields.classList.add('hidden');
       if(withinRhFields) withinRhFields.classList.add('hidden');
       if(laundryDropFields) laundryDropFields.classList.add('hidden');
       if(laundryPickupFields) laundryPickupFields.classList.add('hidden');
       if(laundryCombinedFields) laundryCombinedFields.classList.add('hidden');
+    }
+
+    function updateServiceMode() {
+      const isSpecialRequest = serviceSelect && serviceSelect.value === 'Special Request';
+      if (standardBookingFields) {
+        standardBookingFields.classList.toggle('hidden', isSpecialRequest);
+      }
+      if (specialRequestNotice) {
+        specialRequestNotice.classList.toggle('hidden', !isSpecialRequest);
+      }
+    }
+
+    function updateDestinationOptions(){
+      if (!residenceSelect) return;
+      const destinationType = destinationTypeSelect ? destinationTypeSelect.value : 'rh';
+
+      if (locationLabelEl) {
+        locationLabelEl.textContent = destinationType === 'ac' ? 'Academic Building' : 'Residence Hall';
+      }
+
+      if (destinationType === 'ac') {
+        residenceSelect.innerHTML = `
+          <option value="">Select Academic Building</option>
+          <option value="AC-01">AC-01 (near RH1)</option>
+          <option value="AC-02">AC-02 (near RH2)</option>
+          <option value="AC-03">AC-03 (near RH3)</option>
+          <option value="AC-04">AC-04 (near RH4)</option>
+          <option value="AC-05">AC-05 (near RH6,7)</option>
+        `;
+      } else {
+        residenceSelect.innerHTML = `
+          <option value="">Select Residence Hall</option>
+          <option value="1">RH1</option>
+          <option value="2">RH2</option>
+          <option value="3">RH3</option>
+          <option value="4">RH4</option>
+          <option value="5">RH5</option>
+          <option value="6">RH6</option>
+          <option value="7">RH7</option>
+        `;
+      }
     }
 
     function updateLaundryModeFields(){
@@ -962,11 +1049,26 @@
         if (combinedPickupDayInput) combinedPickupDayInput.value = '';
         updateCombinedPickupDay();
       }
+      updatePriceDisplay();
+    }
+
+    function getBaseResidenceHall(locationValue) {
+      const acToRh = {
+        'AC-01': 1,
+        'AC-02': 2,
+        'AC-03': 3,
+        'AC-04': 4,
+        'AC-05': 6
+      };
+      if (Object.prototype.hasOwnProperty.call(acToRh, locationValue)) {
+        return acToRh[locationValue];
+      }
+      return Number(locationValue || 0);
     }
 
     function updateLaundryDayOptions(){
       const rh = residenceSelect ? residenceSelect.value : '';
-      const rhNum = Number(rh);
+      const rhNum = getBaseResidenceHall(rh);
 
       const dropDaySelect = document.getElementById('laundry_drop_day');
       if (dropDaySelect) {
@@ -996,7 +1098,7 @@
 
     function updateCombinedPickupDay(){
       const rh = residenceSelect ? residenceSelect.value : '';
-      const rhNum = Number(rh);
+      const rhNum = getBaseResidenceHall(rh);
       const dropoffDaySelect = document.getElementById('laundry_combined_drop_day');
       const pickupDayField = document.getElementById('laundry_combined_pickup_day');
       
@@ -1022,8 +1124,6 @@
 
     // FIX: added function to update combined drop day options for RH6-7
     function updateCombinedDropDayOptions(){
-      const rh = residenceSelect ? residenceSelect.value : '';
-      const rhNum = Number(rh);
       const combinedDropDaySelect = document.getElementById('laundry_combined_drop_day');
       
       if (combinedDropDaySelect) {
@@ -1053,21 +1153,36 @@
           if(gateFields) gateFields.classList.remove('hidden');
         } else if (svc === 'Tuck Shop') {
           if(tuckFields) tuckFields.classList.remove('hidden');
+        } else if (svc === 'FuelZone Delivery' || svc === 'Blue Tokai Delivery') {
+          if(orderFields) orderFields.classList.remove('hidden');
+        } else if (svc === 'Special Request') {
+          updateServiceMode();
+          updatePriceDisplay();
+          return;
         } else if (svc === 'Within-Residence-Hall') {
           if(withinRhFields) withinRhFields.classList.remove('hidden');
         }
+        updateServiceMode();
         updatePriceDisplay();
       });
     }
 
     // TASK 2: fixed pricing function (uses exact dropdown values)
     function calculatePrice(service, rh) {
-      const r = Number(rh);
+      const acToRh = {
+        'AC-01': 1,
+        'AC-02': 2,
+        'AC-03': 3,
+        'AC-04': 4,
+        'AC-05': 6
+      };
+      const baseRh = getBaseResidenceHall(rh);
+      const acSurcharge = Object.prototype.hasOwnProperty.call(acToRh, rh) ? 10 : 0;
 
       if (service === 'Mail') {
-        if (r === 3) return 50;
-        if ([1,2,4,5].includes(r)) return 75;
-        if ([6,7].includes(r)) return 100; // FIX: RH6 and RH7 already handled
+        if (baseRh === 3) return 50 + acSurcharge;
+        if ([1,2,4,5].includes(baseRh)) return 75 + acSurcharge;
+        if ([6,7].includes(baseRh)) return 100 + acSurcharge;
       }
 
       if (service === 'Laundry') {
@@ -1075,29 +1190,29 @@
 
         // Drop-off + Pickup pricing
         if (laundryType === 'dropoff+pickup') {
-          if ([5,6,7].includes(r)) return 85; // FIX: RH6 and RH7 already included
-          if ([3,4].includes(r)) return 125;
-          if ([1,2].includes(r)) return 175;
+          if ([5,6,7].includes(baseRh)) return 85 + acSurcharge;
+          if ([3,4].includes(baseRh)) return 125 + acSurcharge;
+          if ([1,2].includes(baseRh)) return 175 + acSurcharge;
         }
 
         // Drop-off and Pickup pricing (same as before)
-        if ([5,6,7].includes(r)) return 50; // FIX: RH6 and RH7 already included
-        if ([3,4].includes(r)) return 75;
-        if ([1,2].includes(r)) return 100;
+        if ([5,6,7].includes(baseRh)) return 50 + acSurcharge;
+        if ([3,4].includes(baseRh)) return 75 + acSurcharge;
+        if ([1,2].includes(baseRh)) return 100 + acSurcharge;
       }
 
       if (service === 'Gate Pickup') {
         const gate = document.getElementById('gate_number')?.value;
         if (!gate) return 0;
         if (gate === '1') {
-          if ([1,2].includes(r)) return 50;
-          if (r === 3) return 75;
-          if ([4,5,6,7].includes(r)) return 100; // FIX: added RH6 and RH7 support
+          if ([1,2].includes(baseRh)) return 50 + acSurcharge;
+          if (baseRh === 3) return 75 + acSurcharge;
+          if ([4,5,6,7].includes(baseRh)) return 100 + acSurcharge;
         }
         if (gate === '2') {
-          if ([1,2].includes(r)) return 100;
-          if (r === 3) return 75;
-          if ([4,5,6,7].includes(r)) return 50; // FIX: added RH6 and RH7 support
+          if ([1,2].includes(baseRh)) return 100 + acSurcharge;
+          if (baseRh === 3) return 75 + acSurcharge;
+          if ([4,5,6,7].includes(baseRh)) return 50 + acSurcharge;
         }
       }
 
@@ -1105,19 +1220,34 @@
         const tuckShopLocation = document.getElementById('tuck_shop_location')?.value;
         if (!tuckShopLocation) return 0;
         if (tuckShopLocation === 'tuck shop mess') {
-          if ([1,2].includes(r)) return 50;
-          if (r === 3) return 75;
-          if ([4,5,6,7].includes(r)) return 100; // FIX: added RH6 and RH7 support
+          if ([1,2].includes(baseRh)) return 50 + acSurcharge;
+          if (baseRh === 3) return 75 + acSurcharge;
+          if ([4,5,6,7].includes(baseRh)) return 100 + acSurcharge;
         }
         if (tuckShopLocation === 'tuck shop rh5') {
-          if ([1,2].includes(r)) return 100;
-          if (r === 3) return 75;
-          if ([4,5,6,7].includes(r)) return 50; // FIX: added RH6 and RH7 support
+          if ([1,2].includes(baseRh)) return 100 + acSurcharge;
+          if (baseRh === 3) return 75 + acSurcharge;
+          if ([4,5,6,7].includes(baseRh)) return 50 + acSurcharge;
         }
       }
 
+      if (service === 'FuelZone Delivery') {
+        if ([1,2].includes(baseRh)) return 50 + acSurcharge;
+        if (baseRh === 3) return 75 + acSurcharge;
+        if ([4,5,6,7].includes(baseRh)) return 100 + acSurcharge;
+      }
+
+      if (service === 'Blue Tokai Delivery') {
+        if ([1,2,6,7].includes(baseRh)) return 100 + acSurcharge;
+        if ([4,5].includes(baseRh)) return 75 + acSurcharge;
+      }
+
       if (service === 'Within-Residence-Hall') {
-        return 25; // FIX: already handles all RHs
+        return 25 + acSurcharge;
+      }
+
+      if (service === 'Special Request') {
+        return 0;
       }
 
       return 0;
@@ -1127,6 +1257,15 @@
     function updatePriceDisplay(){
       if(!priceDisplayEl) return 0;
       const svc = serviceSelect ? serviceSelect.value : '';
+      if (svc === 'Special Request') {
+        priceDisplayEl.textContent = 'Contact logistics for pricing';
+        priceDisplayEl.dataset.price = '0';
+        const payBtn = document.getElementById('payBtn');
+        if (payBtn) {
+          payBtn.disabled = true;
+        }
+        return 0;
+      }
       const rh = residenceSelect ? residenceSelect.value : '';
       const price = calculatePrice(svc, rh);
       priceDisplayEl.textContent = `Price: ₹${price}`;
@@ -1148,6 +1287,13 @@
       return `upi://pay?pa=${upiId}&pn=${name}&am=${amount}&cu=INR`;
     }
 
+    if (destinationTypeSelect) destinationTypeSelect.addEventListener('change', () => {
+      updateDestinationOptions();
+      updateLaundryDayOptions();
+      updateCombinedDropDayOptions();
+      updateCombinedPickupDay();
+      updatePriceDisplay();
+    });
     if (serviceSelect) serviceSelect.addEventListener('change', updatePriceDisplay);
     if (residenceSelect) residenceSelect.addEventListener('change', () => {
       updatePriceDisplay();
@@ -1155,7 +1301,10 @@
       updateCombinedDropDayOptions(); // FIX: added to update combined drop day options for RH6-7
       updateCombinedPickupDay();
     });
-    if (laundryTypeSelect) laundryTypeSelect.addEventListener('change', updateLaundryModeFields);
+    if (laundryTypeSelect) laundryTypeSelect.addEventListener('change', () => {
+      updateLaundryModeFields();
+      updatePriceDisplay();
+    });
     const combinedDropDaySelect = document.getElementById('laundry_combined_drop_day');
     if (combinedDropDaySelect) combinedDropDaySelect.addEventListener('change', updateCombinedPickupDay);
     const gateNumberSelect = document.getElementById('gate_number');
@@ -1168,7 +1317,9 @@
     if (deliveriesToggle) deliveriesToggle.addEventListener('click', toggleDeliveries);
 
     // initialize UI state
+    updateDestinationOptions();
     hideAllExtras();
+    updateServiceMode();
     updateLaundryModeFields();
     updatePriceDisplay();
     updateLaundryDayOptions();
@@ -1176,6 +1327,10 @@
 
     document.getElementById('payBtn').addEventListener('click', function(){
       const service = document.getElementById('service_type').value;
+      if (service === 'Special Request') {
+        alert('Use the logistics contact shown below for Special Request deliveries.');
+        return;
+      }
       const rh = document.getElementById('residence_hall').value;
       const price = calculatePrice(service, rh);
 

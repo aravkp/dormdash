@@ -57,7 +57,7 @@
       <div class="controls">
         <div id="statusFilterButtons" style="display:flex;gap:8px;align-items:center">
           <button id="filterAll" class="status-filter active" type="button">All</button>
-          <button id="filterPending" class="status-filter" type="button">Pending</button>
+          <button id="filterPending" class="status-filter" type="button">Active</button>
           <button id="filterDelivered" class="status-filter" type="button">Delivered</button>
           <button id="filterRejected" class="status-filter" type="button">Rejected</button>
         </div>
@@ -69,13 +69,15 @@
           <option value="laundry">Laundry</option>
           <option value="gate">Gate Pickup</option>
           <option value="tuckshop">Tuck Shop</option>
+          <option value="fuelzone-delivery">FuelZone Delivery</option>
+          <option value="blue-tokai-delivery">Blue Tokai Delivery</option>
           <option value="within-residence-hall">Within-Residence-Hall</option>
         </select>
 
         <!-- NEW: Residence Hall filter -->
-        <label class="small">RH:</label>
+        <label class="small">Location:</label>
         <select id="rhFilter">
-          <option value="">All RH</option>
+          <option value="">All Locations</option>
           <option value="1">RH1</option>
           <option value="2">RH2</option>
           <option value="3">RH3</option>
@@ -83,6 +85,11 @@
           <option value="5">RH5</option>
           <option value="6">RH6</option>
           <option value="7">RH7</option>
+          <option value="AC-01">AC-01</option>
+          <option value="AC-02">AC-02</option>
+          <option value="AC-03">AC-03</option>
+          <option value="AC-04">AC-04</option>
+          <option value="AC-05">AC-05</option>
         </select>
 
         <label class="small">Courier:</label>
@@ -105,6 +112,7 @@
 
       <section class="panel">
         <h2 class="section-title">Deliveries</h2>
+        <div id="resultsSummary" class="small" style="margin-bottom:8px">Loading deliveries...</div>
         <div id="deliveriesList" class="list"></div>
       </section>
 
@@ -117,6 +125,8 @@
     </div>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js"></script>
   <script>
     const ADMIN_PASSWORD = "sunilwankedonholi";
 
@@ -138,6 +148,15 @@
     const notificationStatusEl = document.getElementById('notificationStatus');
     const notificationHelpEl = document.getElementById('notificationHelp');
     const notificationBannerEl = document.getElementById('notificationBanner');
+    const firebaseApp = firebase.initializeApp({
+      apiKey: "AIzaSyCmHbirJJE7d8_wvMhvEUDknBfSdTqwPK0",
+      authDomain: "dormdash-38623.firebaseapp.com",
+      projectId: "dormdash-38623",
+      storageBucket: "dormdash-38623.firebasestorage.app",
+      messagingSenderId: "927323489495",
+      appId: "1:927323489495:web:0f9a2163ab45b25f509c92"
+    }, 'admin-app');
+    const firebaseMessaging = firebase.messaging(firebaseApp);
 
     let swRegistrationPromise = null;
 
@@ -192,38 +211,29 @@
       }
     }
 
-    function urlBase64ToUint8Array(base64String) {
-      const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-      const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-      const rawData = atob(base64);
-      return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-    }
-
-    async function subscribeToAdminPush() {
+    async function registerAdminToken() {
       const reg = await ensureServiceWorkerRegistration();
       if (!reg) throw new Error('Service worker unavailable');
 
-      const keyRes = await fetch(`${API_BASE}/notifications/vapid-public-key`);
-      if (!keyRes.ok) throw new Error('Push configuration is unavailable');
-      const { public_key: publicKey } = await keyRes.json();
-      if (!publicKey) throw new Error('Missing VAPID public key');
+      const keyRes = await fetch(`${API_BASE}/notifications/firebase-web-push-key`);
+      if (!keyRes.ok) throw new Error('Firebase web push key is unavailable');
+      const { web_push_key: webPushKey } = await keyRes.json();
+      if (!webPushKey) throw new Error('Missing Firebase web push key');
 
-      let subscription = await reg.pushManager.getSubscription();
-      if (!subscription) {
-        subscription = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey)
-        });
-      }
+      const token = await firebaseMessaging.getToken({
+        vapidKey: webPushKey,
+        serviceWorkerRegistration: reg,
+      });
+      if (!token) throw new Error('Could not get Firebase messaging token');
 
-      const saveRes = await fetch(`${API_BASE}/notifications/admin/subscribe`, {
+      const saveRes = await fetch(`${API_BASE}/notifications/admin/register-token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription)
+        body: JSON.stringify({ token })
       });
       if (!saveRes.ok) {
         const body = await saveRes.json().catch(() => ({}));
-        throw new Error(body.detail || 'Could not save push subscription');
+        throw new Error(body.detail || 'Could not save Firebase token');
       }
     }
 
@@ -243,7 +253,7 @@
         const permission = await Notification.requestPermission();
         updateNotificationUI();
         if (permission === 'granted') {
-          await subscribeToAdminPush();
+          await registerAdminToken();
           notificationStatusEl.textContent = 'Notifications are enabled.';
         }
       } catch (err) {
@@ -254,10 +264,45 @@
 
     enableNotificationsBtn.addEventListener('click', enableNotifications);
 
+    firebaseMessaging.onMessage(async (payload) => {
+      if (Notification.permission !== 'granted') return;
+      const reg = await ensureServiceWorkerRegistration();
+      if (!reg) return;
+      await reg.showNotification(payload.notification?.title || 'DormDash', {
+        body: payload.notification?.body || '',
+        icon: 'icon-512.png',
+        badge: 'icon-512.png',
+        data: {
+          url: payload.fcmOptions?.link || '/admin.html'
+        }
+      });
+    });
+
     function escapeHtml(s){ return String(s||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+    function normalizeServiceType(value){
+      const svc = String(value || '').trim().toLowerCase();
+      if (svc === 'gate' || svc === 'gate pickup') return 'gate';
+      if (svc === 'tuckshop' || svc === 'tuck shop') return 'tuckshop';
+      if (svc === 'fuelzone delivery') return 'fuelzone-delivery';
+      if (svc === 'blue tokai delivery') return 'blue-tokai-delivery';
+      if (svc === 'within-residence-hall' || svc === 'within residence hall') return 'within-residence-hall';
+      if (svc === 'mail') return 'mail';
+      if (svc === 'laundry') return 'laundry';
+      return svc || 'unknown';
+    }
+    function formatLocation(value){
+      const raw = String(value || '').trim();
+      return raw.startsWith('AC-') ? raw : `RH ${raw || 'N/A'}`;
+    }
+    function statusBucket(value){
+      const st = String(value || '').trim().toLowerCase();
+      if (st === 'delivered') return 'delivered';
+      if (st === 'rejected') return 'rejected';
+      return 'active';
+    }
     function badge(svc){
-      const map = { mail:['Mail','mail'], laundry:['Laundry','laundry'], gate:['Gate','gate'], 'gate pickup':['Gate','gate'], tuckshop:['Tuck Shop','tuckshop'], 'tuck shop':['Tuck Shop','tuckshop'], 'within-residence-hall':['Within RH','gate'], 'within residence hall':['Within RH','gate'] };
-      const e = map[svc] || ['Unknown','mail'];
+      const map = { mail:['Mail','mail'], laundry:['Laundry','laundry'], gate:['Gate','gate'], tuckshop:['Tuck Shop','tuckshop'], 'fuelzone-delivery':['FuelZone','tuckshop'], 'blue-tokai-delivery':['Blue Tokai','tuckshop'], 'within-residence-hall':['Within RH','gate'] };
+      const e = map[normalizeServiceType(svc)] || ['Unknown','mail'];
       return `<span class="badge ${e[1]}">${e[0]}</span>`;
     }
     function serviceDetails(d){
@@ -281,6 +326,8 @@
         return out;
       }
       if(svc==='tuckshop' || svc==='tuck shop') return `<div class="service-details">Tuck Shop Order<br><strong>Location:</strong> ${escapeHtml(d.tuck_shop_location||'N/A')}<br><strong>Items:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='fuelzone delivery') return `<div class="service-details">FuelZone Delivery<br><strong>Order:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
+      if(svc==='blue tokai delivery') return `<div class="service-details">Blue Tokai Delivery<br><strong>Order:</strong> ${escapeHtml(d.items_requested||'N/A')}</div>`;
       if(svc==='within-residence-hall' || svc==='within residence hall') return `<div class="service-details">Within-Residence-Hall<br><strong>Food Place:</strong> ${escapeHtml(d.order_from||'N/A')}</div>`;
       return `<div class="service-details">${escapeHtml(svc)}</div>`;
     }
@@ -305,7 +352,7 @@
         <div class="card" data-id="${d.id}">
           <div class="left">
             <div class="name"><strong>${escapeHtml(displayUser)}</strong> ${badge((d.service_type||'').toLowerCase())}</div>
-            <div class="meta">RH ${escapeHtml(d.residence_hall||'N/A')} · Room ${escapeHtml(d.room_number||'N/A')} · <span class="small">#${d.id} · ${escapeHtml(d.status||'pending')}</span></div>
+            <div class="meta">${escapeHtml(formatLocation(d.residence_hall))} · Room ${escapeHtml(d.room_number||'N/A')} · <span class="small">#${d.id} · ${escapeHtml(d.status||'pending')}</span></div>
             <div class="meta">Phone ${escapeHtml(d.phone_number||'N/A')}</div>
             ${serviceDetails(d)}
           </div>
@@ -327,6 +374,7 @@
     // Renamed to loadAllDeliveries for clarity and to implement safe re-render
     async function loadAllDeliveries(){
       const listEl = document.getElementById('deliveriesList');
+      const summaryEl = document.getElementById('resultsSummary');
 
       // Preserve courier input values before re-rendering
       const courierInputs = {};
@@ -354,21 +402,29 @@
         const rhFilter = (document.getElementById('rhFilter').value||'').trim();
 
         let filtered = arr;
-        if(svcFilter && svcFilter !== 'all') filtered = filtered.filter(x => (x.service_type||'').toLowerCase()===svcFilter);
+        if(svcFilter && svcFilter !== 'all') filtered = filtered.filter(x => normalizeServiceType(x.service_type) === svcFilter);
         if(courierFilter) filtered = filtered.filter(x => String(x.courier||'').trim().toLowerCase() === courierFilter.toLowerCase());
         if(rhFilter) filtered = filtered.filter(x => String(x.residence_hall||'').trim() === rhFilter);
 
-        // apply status filter: All / Pending (active) / Delivered / Rejected
+        // apply status filter: All / Active / Delivered / Rejected
         if(currentFilter === 'pending') {
-          filtered = filtered.filter(x => {
-            const st = String(x.status||'').toLowerCase();
-            return st !== 'delivered' && st !== 'rejected';
-          });
+          filtered = filtered.filter(x => statusBucket(x.status) === 'active');
         } else if(currentFilter === 'delivered') {
-          filtered = filtered.filter(x => String(x.status||'').toLowerCase() === 'delivered');
+          filtered = filtered.filter(x => statusBucket(x.status) === 'delivered');
         } else if(currentFilter === 'rejected') {
-          filtered = filtered.filter(x => String(x.status||'').toLowerCase() === 'rejected');
+          filtered = filtered.filter(x => statusBucket(x.status) === 'rejected');
         }
+
+        const activeFilters = [];
+        if (currentFilter === 'pending') activeFilters.push('Active');
+        else if (currentFilter === 'delivered') activeFilters.push('Delivered');
+        else if (currentFilter === 'rejected') activeFilters.push('Rejected');
+        if (svcFilter && svcFilter !== 'all') activeFilters.push(`Service: ${svcFilter}`);
+        if (rhFilter) activeFilters.push(`Location: ${formatLocation(rhFilter)}`);
+        if (courierFilter) activeFilters.push(`Courier: ${courierFilter}`);
+        summaryEl.textContent = activeFilters.length
+          ? `Showing ${filtered.length} of ${arr.length} deliveries. Filters: ${activeFilters.join(' | ')}`
+          : `Showing all ${arr.length} deliveries.`;
 
         // render
         listEl.innerHTML = '';
@@ -398,6 +454,7 @@
 
       }catch(e){
         listEl.innerHTML = '<div class="small">Error loading deliveries</div>';
+        summaryEl.textContent = 'Could not load deliveries.';
         console.error(e);
       }
     }
@@ -488,14 +545,18 @@
 
     function updateStats(all){
       const byStatus = all.reduce((acc,d)=>{ acc[d.status]= (acc[d.status]||0)+1; return acc },{});
-      const byService = all.reduce((acc,d)=>{ const s=(d.service_type||'unknown'); acc[s]= (acc[s]||0)+1; return acc },{});
+      const byService = all.reduce((acc,d)=>{
+        const s = normalizeServiceType(d.service_type);
+        acc[s]= (acc[s]||0)+1;
+        return acc;
+      },{});
       const el = document.getElementById('statsArea');
       el.innerHTML = `
         <div><strong>Total:</strong> ${all.length}</div>
-        <div><strong>Pending:</strong> ${byStatus.pending||0} &nbsp; <strong>Approved:</strong> ${byStatus.approved||0} &nbsp; <strong>Accepted:</strong> ${byStatus.accepted||0} &nbsp; <strong>Delivered:</strong> ${byStatus.delivered||0}</div>
+        <div><strong>Pending:</strong> ${byStatus.pending||0} &nbsp; <strong>Approved:</strong> ${byStatus.approved||0} &nbsp; <strong>Accepted:</strong> ${byStatus.accepted||0} &nbsp; <strong>Delivered:</strong> ${byStatus.delivered||0} &nbsp; <strong>Rejected:</strong> ${byStatus.rejected||0}</div>
         <div style="margin-top:8px"><strong>By Service:</strong></div>
         <div class="small">
-          Mail: ${byService.mail||0} · Laundry: ${byService.laundry||0} · Gate: ${byService.gate||0} · Tuck: ${byService.tuckshop||0}
+          Mail: ${byService.mail||0} · Laundry: ${byService.laundry||0} · Gate: ${byService.gate||0} · Tuck: ${byService.tuckshop||0} · FuelZone: ${byService['fuelzone-delivery']||0} · Blue Tokai: ${byService['blue-tokai-delivery']||0} · Within RH: ${byService['within-residence-hall']||0}
         </div>
       `;
     }

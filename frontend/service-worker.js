@@ -1,3 +1,17 @@
+importScripts('https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/12.11.0/firebase-messaging-compat.js');
+
+firebase.initializeApp({
+  apiKey: "AIzaSyCmHbirJJE7d8_wvMhvEUDknBfSdTqwPK0",
+  authDomain: "dormdash-38623.firebaseapp.com",
+  projectId: "dormdash-38623",
+  storageBucket: "dormdash-38623.firebasestorage.app",
+  messagingSenderId: "927323489495",
+  appId: "1:927323489495:web:0f9a2163ab45b25f509c92"
+});
+
+const firebaseMessaging = firebase.messaging();
+
 // Basic service worker with notification click handler
 self.addEventListener('install', (event) => {
   self.skipWaiting();
@@ -12,27 +26,18 @@ self.addEventListener('fetch', (event) => {
   // noop - let the browser handle network requests
 });
 
-self.addEventListener('push', function(event) {
-  if (!event.data) return;
-
-  let payload = {};
-  try {
-    payload = event.data.json();
-  } catch (err) {
-    payload = { title: 'DormDash', body: event.data.text() };
-  }
-
-  const title = payload.title || 'DormDash';
+firebaseMessaging.onBackgroundMessage(function(payload) {
+  const title = payload.notification?.title || 'DormDash';
   const options = {
-    body: payload.body || '',
-    icon: 'icon-192.png',
-    badge: 'icon-192.png',
+    body: payload.notification?.body || '',
+    icon: 'icon-512.png',
+    badge: 'icon-512.png',
     data: {
-      url: payload.url || '/customer.html'
+      url: payload.fcmOptions?.link || '/customer.html'
     }
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  self.registration.showNotification(title, options);
 });
 
 // Ensure notifications reopen the relevant app page on click.

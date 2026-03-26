@@ -35,7 +35,7 @@ def get_db():
 @app.post("/deliveries", response_model=schemas.DeliveryResponse)
 def create_delivery(delivery: schemas.DeliveryCreate, db: Session = Depends(get_db)):
     created = crud.create_delivery(db=db, delivery=delivery)
-    notifications.send_role_notification(
+    notifications.send_notification(
         db=db,
         role="admin",
         title="New Delivery",
@@ -91,12 +91,13 @@ def approve_delivery(delivery_id: int, db: Session = Depends(get_db)):
 @app.post("/deliveries/{delivery_id}/assign", response_model=schemas.DeliveryResponse)
 def assign_delivery(delivery_id: int, assign: schemas.DeliveryAccept, db: Session = Depends(get_db)):
     delivery = crud.assign_delivery(db, delivery_id, assign.courier)
-    notifications.send_role_notification(
+    notifications.send_notification(
         db=db,
-        role=notifications.courier_role(assign.courier),
+        role="courier",
         title="Pickup Ready",
         body=f"You have been assigned delivery #{delivery.id}.",
         url="/courier.html",
+        courier_id=assign.courier,
     )
     return delivery
 
@@ -108,42 +109,43 @@ def reject_delivery(delivery_id: int, db: Session = Depends(get_db)):
     return delivery
 
 
-@app.get("/notifications/vapid-public-key", response_model=schemas.VapidPublicKeyResponse)
-def get_vapid_public_key():
-    return {"public_key": notifications.get_vapid_public_key()}
+@app.get("/notifications/firebase-config")
+def get_firebase_config():
+    return notifications.get_firebase_config()
 
 
-@app.post("/notifications/admin/subscribe")
-def subscribe_admin_notifications(
-    subscription: schemas.PushSubscriptionCreate,
+@app.get("/notifications/firebase-web-push-key", response_model=schemas.FirebaseWebPushKeyResponse)
+def get_firebase_web_push_key():
+    return {"web_push_key": notifications.get_firebase_web_push_key()}
+
+
+@app.post("/notifications/admin/register-token")
+def register_admin_notification_token(
+    payload: schemas.NotificationTokenCreate,
     db: Session = Depends(get_db),
 ):
-    if not notifications.vapid_is_configured():
-        raise HTTPException(status_code=503, detail="Push notifications are not configured")
-    notifications.upsert_subscription(db, subscription, role="admin")
+    if not notifications.firebase_is_configured():
+        raise HTTPException(status_code=503, detail="Firebase notifications are not configured")
+    notifications.upsert_notification_token(db, payload, role="admin")
     return {"ok": True}
 
 
-@app.post("/notifications/courier/{courier_id}/subscribe")
-def subscribe_courier_notifications(
+@app.post("/notifications/courier/{courier_id}/register-token")
+def register_courier_notification_token(
     courier_id: str,
-    subscription: schemas.PushSubscriptionCreate,
+    payload: schemas.NotificationTokenCreate,
     db: Session = Depends(get_db),
 ):
-    if not notifications.vapid_is_configured():
-        raise HTTPException(status_code=503, detail="Push notifications are not configured")
-    notifications.upsert_subscription(
-        db,
-        subscription,
-        role=notifications.courier_role(courier_id),
-    )
+    if not notifications.firebase_is_configured():
+        raise HTTPException(status_code=503, detail="Firebase notifications are not configured")
+    notifications.upsert_notification_token(db, payload, role="courier", courier_id=courier_id)
     return {"ok": True}
 
 
-@app.post("/notifications/unsubscribe")
-def unsubscribe_notifications(
-    subscription: schemas.PushSubscriptionCreate,
+@app.post("/notifications/unregister-token")
+def unregister_notification_token(
+    payload: schemas.NotificationTokenCreate,
     db: Session = Depends(get_db),
 ):
-    notifications.remove_subscription_by_endpoint(db, subscription.endpoint)
+    notifications.remove_notification_token(db, payload.token)
     return {"ok": True}
