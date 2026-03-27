@@ -42,6 +42,20 @@ def create_delivery(delivery: schemas.DeliveryCreate, db: Session = Depends(get_
         body=f"A new {created.service_type or 'delivery'} request has been created.",
         url="/admin.html",
     )
+    notifications.send_admin_email(
+        subject=f"New DormDash Delivery #{created.id}",
+        text=(
+            f"A new {created.service_type or 'delivery'} request has been created.\n\n"
+            f"ID: {created.id}\n"
+            f"Customer: {created.name or 'Unknown'}\n"
+            f"Location: {created.residence_hall or 'N/A'}\n"
+            f"Room: {created.room_number or 'N/A'}\n"
+            f"Phone: {created.phone_number or 'N/A'}\n"
+            f"Price: Rs {created.price if created.price is not None else 'N/A'}\n"
+            f"Status: {created.status or 'pending'}\n"
+            f"Open admin: https://dormdash.co.in/admin.html"
+        ),
+    )
     return created
 
 @app.get("/deliveries", response_model=List[schemas.DeliveryResponse])
@@ -98,6 +112,19 @@ def assign_delivery(delivery_id: int, assign: schemas.DeliveryAccept, db: Sessio
         body=f"You have been assigned delivery #{delivery.id}.",
         url="/courier.html",
         courier_id=assign.courier,
+    )
+    notifications.send_courier_email(
+        courier_id=assign.courier,
+        subject=f"DormDash Pickup Ready #{delivery.id}",
+        text=(
+            f"You have been assigned delivery #{delivery.id}.\n\n"
+            f"Service: {delivery.service_type or 'N/A'}\n"
+            f"Customer: {delivery.name or delivery.ashoka_id or 'Unknown'}\n"
+            f"Location: {delivery.residence_hall or 'N/A'}\n"
+            f"Room: {delivery.room_number or 'N/A'}\n"
+            f"Phone: {delivery.phone_number or 'N/A'}\n"
+            f"Open courier dashboard: https://dormdash.co.in/courier.html"
+        ),
     )
     return delivery
 

@@ -405,7 +405,9 @@
   </div>
 
   <script>
-
+  alert("DormDash is temporarily down for maintenance. Please try again later.");
+  document.body.innerHTML = "<h1 style='text-align:center;margin-top:40vh;font-family:sans-serif'>DormDash is under maintenance 🚧</h1>";
+  throw new Error("Maintenance mode");
 
   const API_BASE = "https://dormdash-b0ri.onrender.com";
   const TRACKED_DELIVERY_IDS_KEY = "tracked_delivery_ids";
