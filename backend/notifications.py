@@ -100,6 +100,7 @@ def send_email(recipient: str, subject: str, text: str) -> None:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "dormdash/1.0",
         },
         method="POST",
     )
@@ -115,7 +116,7 @@ def send_email(recipient: str, subject: str, text: str) -> None:
             )
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        logger.exception(
+        logger.error(
             "Email send failed recipient=%s status=%s response=%s",
             recipient,
             exc.code,
