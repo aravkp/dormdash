@@ -63,15 +63,19 @@ def calculate_delivery_price(delivery: DeliveryCreate) -> int:
                 return 50 + ac_surcharge
             if rh == 3:
                 return 75 + ac_surcharge
-            if rh in {4, 5, 6, 7}:
+            if rh in {4, 5}:
                 return 100 + ac_surcharge
+            if rh in {6, 7}:
+                return 150 + ac_surcharge
         if gate == "2":
             if rh in {1, 2}:
                 return 100 + ac_surcharge
             if rh == 3:
                 return 75 + ac_surcharge
-            if rh in {4, 5, 6, 7}:
+            if rh in {4, 5}:
                 return 50 + ac_surcharge
+            if rh in {6, 7}:
+                return 100 + ac_surcharge
         return 0
 
     if service == "Tuck Shop":
@@ -81,15 +85,19 @@ def calculate_delivery_price(delivery: DeliveryCreate) -> int:
                 return 50 + ac_surcharge
             if rh == 3:
                 return 75 + ac_surcharge
-            if rh in {4, 5, 6, 7}:
+            if rh in {4, 5}:
                 return 100 + ac_surcharge
+            if rh in {6, 7}:
+                return 125 + ac_surcharge
         if tuck_shop_location == "tuck shop rh5":
             if rh in {1, 2}:
                 return 100 + ac_surcharge
             if rh == 3:
                 return 75 + ac_surcharge
-            if rh in {4, 5, 6, 7}:
+            if rh in {4, 5}:
                 return 50 + ac_surcharge
+            if rh in {6, 7}:
+                return 100 + ac_surcharge
         return 0
 
     if service == "FuelZone Delivery":

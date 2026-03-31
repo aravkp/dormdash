@@ -553,6 +553,14 @@
     if (arrow) arrow.textContent = '▲';
   }
 
+  const ashokaIdInput = document.getElementById('ashoka_id');
+  if (ashokaIdInput) {
+    ashokaIdInput.addEventListener('input', function () {
+      const ashokaId = (ashokaIdInput.value || '').trim();
+      localStorage.setItem("user_ashoka_id", ashokaId);
+    });
+  }
+
   function inputValueOrNull(id) {
     const el = document.getElementById(id);
     if (!el) return null;
@@ -680,18 +688,24 @@
 
   async function checkStatusUpdates() {
     try {
-      const ashokaId = normalizeText(localStorage.getItem("user_ashoka_id"));
-      const trackedIds = getTrackedDeliveryIds();
+      const storedId = localStorage.getItem("user_ashoka_id");
+      const normalizedStoredId = normalizeText(storedId);
+      const container = document.getElementById('pendingDeliveriesList');
+
+      if (!normalizedStoredId) {
+        if (container) {
+          container.innerHTML = '<div class="no-deliveries">Enter your Ashoka ID to view deliveries</div>';
+          container.style.display = 'block';
+        }
+        updateDeliveryStatusUI("");
+        return;
+      }
 
       const res = await fetch(`${API_BASE}/deliveries?limit=50`);
       if (!res.ok) return;
       const deliveries = await res.json();
-      const trackedSet = new Set(trackedIds);
-      const userDeliveries = deliveries.filter((d) => {
-        const idMatch = trackedSet.has(Number(d.id));
-        const ashokaMatch =
-          !!ashokaId && normalizeText(d.ashoka_id) === ashokaId;
-        return idMatch || ashokaMatch;
+      const userDeliveries = deliveries.filter(d => {
+        return normalizeText(d.ashoka_id) === normalizeText(storedId);
       });
 
       // Update pending deliveries list
@@ -705,7 +719,6 @@
       }
 
       userDeliveries.forEach(d => {
-        if (d?.id) addTrackedDeliveryId(d.id);
         const key = `delivery_status_${d.id}`;
         const prevStatus = localStorage.getItem(key);
 
@@ -1208,12 +1221,14 @@
         if (gate === '1') {
           if ([1,2].includes(baseRh)) return 50 + acSurcharge;
           if (baseRh === 3) return 75 + acSurcharge;
-          if ([4,5,6,7].includes(baseRh)) return 100 + acSurcharge;
+          if ([4,5].includes(baseRh)) return 100 + acSurcharge;
+          if ([6,7].includes(baseRh)) return 150 + acSurcharge;
         }
         if (gate === '2') {
           if ([1,2].includes(baseRh)) return 100 + acSurcharge;
           if (baseRh === 3) return 75 + acSurcharge;
-          if ([4,5,6,7].includes(baseRh)) return 50 + acSurcharge;
+          if ([4,5].includes(baseRh)) return 50 + acSurcharge;
+          if ([6,7].includes(baseRh)) return 100 + acSurcharge;
         }
       }
 
@@ -1223,12 +1238,14 @@
         if (tuckShopLocation === 'tuck shop mess') {
           if ([1,2].includes(baseRh)) return 50 + acSurcharge;
           if (baseRh === 3) return 75 + acSurcharge;
-          if ([4,5,6,7].includes(baseRh)) return 100 + acSurcharge;
+          if ([4,5].includes(baseRh)) return 100 + acSurcharge;
+          if ([6,7].includes(baseRh)) return 125 + acSurcharge;
         }
         if (tuckShopLocation === 'tuck shop rh5') {
           if ([1,2].includes(baseRh)) return 100 + acSurcharge;
           if (baseRh === 3) return 75 + acSurcharge;
-          if ([4,5,6,7].includes(baseRh)) return 50 + acSurcharge;
+          if ([4,5].includes(baseRh)) return 50 + acSurcharge;
+          if ([6,7].includes(baseRh)) return 100 + acSurcharge;
         }
       }
 
